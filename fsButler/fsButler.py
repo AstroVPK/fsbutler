@@ -32,6 +32,9 @@ class fsButler(object):
                 with a given ccd
         """
     
+        if filter and visit and ccd:
+            return [{'filter' : filter, 'visit' : visit, 'ccd' : ccd}]
+
         import re
     
         subDirs = os.listdir(dataRoot)
@@ -94,6 +97,9 @@ class fsButler(object):
                 with a given patch
         """
     
+        if filter and tract and patch:
+            return [{'filter' : filter, 'tract' : tract, 'patch' : patch}]
+
         deepCoaddPath = os.path.join(dataRoot,'deepCoadd-results')
     
         if filter:
@@ -152,6 +158,9 @@ class fsButler(object):
             else:
                 print "WARNING: The data id {0} does not exist".format(id)
     
+        if len(dataset) == 0:
+            return None
+
         if len(dataset) == 1:
             return dataset[0]
     
