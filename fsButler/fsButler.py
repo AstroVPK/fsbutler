@@ -60,24 +60,26 @@ class fsButler(object):
                 for o in outputs:
                     if re.match(r"^SRC-", o):
                         match = re.match(r"^SRC-([0-9]{7})-([0-9]{3}).fits", o)    
+
                         if match == None:
                             print "WARNING: Failed to read visit and ccd numbers from\
                                   {0}".format(os.path.join(outputPath, o))
-                        else:
-                            visitNumber = int(match.group(1))
-                            ccdNumber = int(match.group(2))
-                            if visit == None and ccd == None:
+                            continue
+
+                        visitNumber = int(match.group(1))
+                        ccdNumber = int(match.group(2))
+                        if visit == None and ccd == None:
+                            dataIds.append({'filter' : df, 'visit' : visitNumber, 'ccd' : ccdNumber})
+                        elif visit != None and ccd == None:
+                            if visitNumber == visit:
                                 dataIds.append({'filter' : df, 'visit' : visitNumber, 'ccd' : ccdNumber})
-                            elif visit != None and ccd == None:
-                                if visitNumber == visit:
-                                    dataIds.append({'filter' : df, 'visit' : visitNumber, 'ccd' : ccdNumber})
-                            elif visit == None and ccd != None:
-                                if ccdNumber == ccd:
-                                    dataIds.append({'filter' : df, 'visit' : visitNumber, 'ccd' : ccdNumber})
-                            elif visit != None and ccd != None:
-                                if visitNumber == visit and ccdNumber == ccd:
-                                    dataIds.append({'filter' : df, 'visit' : visitNumber, 'ccd' : ccdNumber})
-    
+                        elif visit == None and ccd != None:
+                            if ccdNumber == ccd:
+                                dataIds.append({'filter' : df, 'visit' : visitNumber, 'ccd' : ccdNumber})
+                        elif visit != None and ccd != None:
+                            if visitNumber == visit and ccdNumber == ccd:
+                                dataIds.append({'filter' : df, 'visit' : visitNumber, 'ccd' : ccdNumber})
+
         return dataIds
     
     @staticmethod
