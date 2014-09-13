@@ -131,7 +131,45 @@ class fsButler(object):
     
         return dataIds
     
+    @staticmethod
+    def getIds(dataRoot, dataType, **dataId):
+        """
+        Returns a list of data Ids for data of type `dataType` in a given dataRoot directory
     
+        Arguments
+        dataRoot: The directory where the rerun data is stored
+        dataType: The type of data element we want to fetch
+    
+        Keywords
+        dataId: Dictionary of keywords that specify a dataId, if None all the data elements of type
+                `dataType` will be returned. If the id is complete it will only return a single data
+                element.
+        """
+
+        if dataType == 'src' or dataType == 'calexp_md':
+            dataIds = fsButler.singleExpIds(dataRoot, **dataId)
+        elif dataType == 'deepCoadd_src' or dataType == 'deepCoadd_calexp_md':
+            dataIds = fsButler.deepCoaddIds(dataRoot, **dataId)
+        else:
+            raise ValueError("Data type {0} is not implemented".format(dataType))
+
+        return dataIds
+
+    def fetchIds(self, dataType, **dataId):
+        """
+        Returns a list of data Ids for data of type `dataType` in a given dataRoot directory
+    
+        Arguments
+        dataType: The type of data element we want to fetch
+    
+        Keywords
+        dataId: Dictionary of keywords that specify a dataId, if None all the data elements of type
+                `dataType` will be returned. If the id is complete it will only return a single data
+                element.
+        """
+
+        return self.getIds(self.dataRoot, dataType, **dataId)
+
     def fetchDataset(self, dataType='src', flags=None, immediate=True, **dataId):
         """
         Returns a list with all the data elemnts of type `dataType` that match the id `dataId`
@@ -141,16 +179,11 @@ class fsButler(object):
         flags: Flags for the data id
         immediate: If True the butler makes sure it returns the actual data and not a proxy of it
         dataId: Dictionary of keywords that specify a dataId, if None all the data elements of type
-                `dataType will be returned. If the id is complete it will only return a single data
+                `dataType` will be returned. If the id is complete it will only return a single data
                 element.
         """
     
-        if dataType == 'src' or dataType == 'calexp_md':
-            dataIds = self.singleExpIds(self.dataRoot, **dataId)
-        elif dataType == 'deepCoadd_src' or dataType == 'deepCoadd_calexp_md':
-            dataIds = self.deepCoaddIds(self.dataRoot, **dataId)
-        else:
-            raise ValueError("Data type {0} is not implemented".format(dataType))
+        dataIds = self.getIds(self.dataRoot, dataType, **dataId)
     
         dataset = []
         for id in dataIds:
