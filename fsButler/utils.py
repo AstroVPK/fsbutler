@@ -1,3 +1,4 @@
+import re
 import numpy as np
 
 import lsst.afw.table as afwTable
@@ -7,37 +8,111 @@ import lsst.afw.geom as afwGeom
 Utility functions to process data elements delivered by fsButler
 """
 
-def createSchemaMapper(cat):
-    # Get the table associated with the data
-    table = cat.getTable()
-    # Get the schema of the source catalog
-    schema = table.getSchema()
-    # Generate a schema mapper to build the schema of our output catalog
-    scm = afwTable.SchemaMapper(schema)
-    # Columns that we are interested in
-    columns = ["id", "coord", "parent", "deblend.nchild", "classification.extendedness",
-               "flux.kron.radius",
-               "flags.pixel.bad",
-               "flags.pixel.edge",
-               "flags.pixel.interpolated.any",
-               "flags.pixel.interpolated.center",
-               "flags.pixel.saturated.any",
-               "flags.pixel.saturated.center"]
-    for f in schema.extract("flux.psf*"):
-            columns.append(f)
-    # Check if the catalog has composite model measurements
-    hasCmodel = True if len(schema.extract("cmodel*")) > 0 else False
-    if hasCmodel:
-        for f in schema.extract("cmodel*"):
-            columns.append(f)
+_fixedFields = ["id", "coord"]
+
+_fixedPatterns = []
+
+_suffixableFields = ["parent",
+                     "deblend.nchild",
+                     "classification.extendedness",
+                     "flags.pixel.bad",
+                     "flux.kron.radius",
+                     "flags.pixel.edge",
+                     "flags.pixel.interpolated.any",
+                     "flags.pixel.interpolated.center",
+                     "flags.pixel.saturated.any",
+                     "flags.pixel.saturated.center"]
+
+_suffixablePatterns = ["flux.psf*", "cmodel*"]
+
+
+_suffixRegex = re.compile(r'(_[grizy])$')
+
+def _getFilterSuffix(filterSuffix):
+    if filterSuffix == 'HSC-G':
+        return '_g'
+    elif filterSuffix == 'HSC-R':
+        return '_r'
+    elif filterSuffix == 'HSC-I':
+        return '_i'
+    elif filterSuffix == 'HSC-Z':
+        return '_z'
+    elif filterSuffix == 'HSC-Y':
+        return '_y'
     else:
-        print "WARNING: This catalog has no cmodel measurements"
-    # Add the mappings for the columns we are interested in
-    for f in columns: 
+        return filterSuffix
+
+def getCatSuffixes(cat):
+    suffixes = []
+    for schemaItem in cat.getSchema():
+        fieldName = schemaItem.getField().getName()
+        match = _suffixRegex.search(fieldName)
+        if match:
+            suffix = match.group(1)
+            if suffix not in suffixes:
+                suffixes.append(suffix) 
+    return suffixes
+    
+def createSchemaMapper(cat, cat2=None, filterSuffix=None, withZeroMagFlux=False):
+
+    if cat2 and filterSuffix:
+        raise ValueError("Can't use filterSuffix for two catalogs")
+
+    suffixes = getCatSuffixes(cat)
+    if len(suffixes) > 0 and filterSuffix:
+        raise ValueError("Can't add a suffix to a catalog that already has one")
+
+    schema = cat.getSchema()
+    scm = afwTable.SchemaMapper(schema)
+
+    # First fixed fields and patterns
+    for f in _fixedFields: 
         scm.addMapping(schema.find(f).getKey())
-    # Add mappings for the zeroMag flux
-    scm.addOutputField(afwTable.Field["F"]("flux.zeromag",
-                                            "The flux corresponding to zero magnitude"))
+    for p in _fixedPatterns:
+        for f in schema.extract(p):
+            scm.addMapping(schema.find(f).getKey())
+
+    # Now suffixable fields and patterns
+    if filterSuffix:
+        suffix = _getFilterSuffix(filterSuffix)
+    for f in _suffixableFields:
+        if filterSuffix:
+            field = schema.find(f).getField()
+            newField = field.copyRenamed(f + suffix)
+            scm.addMapping(schema.find(f).getKey(), newField)
+        else:
+            if len(suffixes) == 0:
+                scm.addMapping(schema.find(f).getKey())
+            else:
+                for s in suffixes:
+                    scm.addMapping(schema.find(f+s).getKey())
+    for p in _suffixablePatterns:
+        for f in schema.extract(p):
+            if filterSuffix:
+                field = schema.find(f).getField()
+                newField = field.copyRenamed(f + suffix)
+                scm.addMapping(schema.find(f).getKey(), newField)
+            else:
+                # The extract command gets all the suffixes for me
+                scm.addMapping(schema.find(f).getKey())
+
+    if cat2:
+        suffixes2 = getCatSuffixes(cat2)
+        schema2 = cat2.getSchema()
+        for f in _suffixableFields:
+            for s in suffixes2:
+                field = schema2.find(f+s).getField()
+                scm.addOutputField(field)
+        for p in _suffixablePatterns:
+            for f in schema2.extract(p):
+                # The extract command gets the suffixes for me
+                field = schema2.find(f).getField()
+                scm.addOutputField(field)
+
+    if withZeroMagFlux:
+        scm.addOutputField(afwTable.Field["F"]("flux.zeromag",
+                                               "The flux corresponding to zero magnitude"))
+
     return scm
 
 def goodSources(cat):
@@ -52,7 +127,40 @@ def goodSources(cat):
     good = np.logical_and(good, cat.get("deblend.nchild") == 0)
     return good
 
-#def buildXY(hscSources="/tigress/garmilla/data/sgClassCOSMOS.fits", selectSG="/tigress/garmilla/data/cosmos_sg_all.fits"):
+def strictMatch(cat1, cat2, matchRadius=1*afwGeom.arcseconds):
+    """
+    Match two catalogs using a one to one relation where each match is the closest
+    object
+    """
+
+    matched = afwTable.matchRaDec(cat1, cat2, matchRadius, True)
+
+    bestMatches = {}
+    for m1, m2, d in matched:
+        id = m2.getId()
+        if id not in bestMatches:
+            bestMatches[id] = (m1, m2, d)
+        else:
+            if d < bestMatches[id][1]:
+                bestMatches[id] = (m1, m2, d)
+
+    scm = createSchemaMapper(cat1, cat2)
+    schema = scm.getOutputSchema()
+    cat = afwTable.SourceCatalog(schema)
+    cat2Fields = []
+    schema2 = cat2.getSchema()
+    suffixes = getCatSuffixes(cat2)
+    for suffix in suffixes:
+        cat2Fields.extend(schema2.extract("*" + suffix + "$").keys())
+    for id in bestMatches:
+        m1, m2, d = bestMatches[id]
+        record = cat.addNew()
+        record.assign(m1, scm)
+        for f in cat2Fields:
+            record.set(f, m2.get(f))
+
+    return cat
+
 def buildXY(hscCat, sgTable):
     #print "Loading {0}...".format(hscSources)
     #cat = afwTable.SourceCatalog.readFits(hscSources)

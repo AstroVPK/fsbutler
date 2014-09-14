@@ -1,8 +1,25 @@
 import os
 
+import lsst.afw.image as afwImage
+import lsst.afw.table as afwTable
+
+from . import utils
+
 """
 Butler class that works around the LSST butler by looking at the file system.
 """
+
+def _concatenateCats(cats):
+    """
+    Concatenate a list of catalogs into a single catalog
+    """
+
+    cat = cats[0]
+
+    for i in range(1, len(cats)):
+        cat.extend(cats[i], deep=False)
+
+    return cat
 
 class fsButler(object):
 
@@ -170,7 +187,17 @@ class fsButler(object):
 
         return self.getIds(self.dataRoot, dataType, **dataId)
 
-    def fetchDataset(self, dataType='src', flags=None, immediate=True, **dataId):
+    @staticmethod
+    def _getCalexpType(dataType):
+        if dataType == 'src':
+            return 'calexp_md'
+        elif dataType == 'deepCoadd_src':
+            return 'deepCoadd_calexp_md'
+        else:
+            raise ValueError("Unkown dataType")
+
+    def fetchDataset(self, dataType='src', flags=None, immediate=True, withZeroMagFlux=False,
+                     filterSuffix=None, scm=None, **dataId):
         """
         Returns a list with all the data elemnts of type `dataType` that match the id `dataId`
     
@@ -178,6 +205,11 @@ class fsButler(object):
         dataType: The type of data element we want to fetch
         flags: Flags for the data id
         immediate: If True the butler makes sure it returns the actual data and not a proxy of it
+        withZeroMagFlux: If true, an extra column will be added to the catalog with the zero
+                         magnitude flux.
+        filterSuffix: If present, a suffix corresponding to the filet will be appended to suffixable
+                fields.
+        scm: If None generate a new schema mapper
         dataId: Dictionary of keywords that specify a dataId, if None all the data elements of type
                 `dataType` will be returned. If the id is complete it will only return a single data
                 element.
@@ -185,11 +217,31 @@ class fsButler(object):
     
         dataIds = self.getIds(self.dataRoot, dataType, **dataId)
     
+        if withZeroMagFlux:
+            calexpType = self._getCalexpType(dataType)
         dataset = []
         for id in dataIds:
             if self.butler.datasetExists(dataType, **id):
                 dataElement = self.butler.get(dataType, flags=flags, immediate=immediate, **id)
-                dataset.append(dataElement)
+                if withZeroMagFlux:
+                    calexp_md = self.fetchDataset(calexpType, **id)
+                    calib = afwImage.Calib(calexp_md)
+                    fluxMag0, fluxMag0Err = calib.getFluxMag0()
+                if isinstance(dataElement, afwTable.SourceCatalog):
+                    if scm == None:
+                        scm = utils.createSchemaMapper(dataElement, filterSuffix=filterSuffix, withZeroMagFlux=withZeroMagFlux)
+                    outputSchema = scm.getOutputSchema()
+                    outputCat = afwTable.SourceCatalog(outputSchema)
+                    good = utils.goodSources(dataElement)
+                    for i, record in enumerate(dataElement):
+                        if good[i]:
+                            outputRecord = outputCat.addNew()
+                            outputRecord.assign(record, scm)
+                            if withZeroMagFlux:
+                                outputRecord.set('flux.zeromag', fluxMag0)
+                    dataset.append(outputCat)
+                else:
+                    dataset.append(dataElement)
             else:
                 print "WARNING: The data id {0} does not exist".format(id)
     
@@ -199,4 +251,4 @@ class fsButler(object):
         if len(dataset) == 1:
             return dataset[0]
     
-        return dataset
+        return _concatenateCats(dataset)
