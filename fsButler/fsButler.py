@@ -238,7 +238,11 @@ class fsButler(object):
                             outputRecord = outputCat.addNew()
                             outputRecord.assign(record, scm)
                             if withZeroMagFlux:
-                                outputRecord.set('flux.zeromag', fluxMag0)
+                                if filterSuffix:
+                                    suffix = utils._getFilterSuffix(filterSuffix)
+                                    outputRecord.set('flux.zeromag'+suffix, fluxMag0)
+                                else:
+                                    outputRecord.set('flux.zeromag', fluxMag0)
                     dataset.append(outputCat)
                 else:
                     dataset.append(dataElement)

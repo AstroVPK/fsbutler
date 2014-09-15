@@ -14,19 +14,25 @@ _fixedPatterns = []
 
 _suffixableFields = ["parent",
                      "deblend.nchild",
-                     "classification.extendedness",
+                     #"classification.extendedness",
                      "flags.pixel.bad",
-                     "flux.kron.radius",
+                     #"flux.kron.radius",
                      "flags.pixel.edge",
-                     "flags.pixel.interpolated.any",
-                     "flags.pixel.interpolated.center",
-                     "flags.pixel.saturated.any",
-                     "flags.pixel.saturated.center"]
+                     #"flags.pixel.interpolated.any",
+                     #"flags.pixel.interpolated.center",
+                     #"flags.pixel.saturated.any",
+                     "flags.pixel.saturated.center",
+                     "flux.psf",
+                     "cmodel.flux"]
 
-_suffixablePatterns = ["flux.psf*", "cmodel*"]
-
+_suffixablePatterns = ["flux.zeromag*"]
+                       #"flux.psf*",
+                       #"cmodel*"]
 
 _suffixRegex = re.compile(r'(_[grizy])$')
+
+_zeroMagField = afwTable.Field["F"]("flux.zeromag",
+                                    "The flux corresponding to zero magnitude")
 
 def _getFilterSuffix(filterSuffix):
     if filterSuffix == 'HSC-G':
@@ -42,6 +48,18 @@ def _getFilterSuffix(filterSuffix):
     else:
         return filterSuffix
 
+def _suffixOrder(suffix):
+    if suffix == '_g':
+        return 1
+    if suffix == '_r':
+        return 2
+    if suffix == '_i':
+        return 3
+    if suffix == '_z':
+        return 4
+    if suffix == '_y':
+        return 5
+
 def getCatSuffixes(cat):
     suffixes = []
     for schemaItem in cat.getSchema():
@@ -51,6 +69,7 @@ def getCatSuffixes(cat):
             suffix = match.group(1)
             if suffix not in suffixes:
                 suffixes.append(suffix) 
+    suffixes.sort(key=_suffixOrder)
     return suffixes
     
 def createSchemaMapper(cat, cat2=None, filterSuffix=None, withZeroMagFlux=False):
@@ -110,8 +129,14 @@ def createSchemaMapper(cat, cat2=None, filterSuffix=None, withZeroMagFlux=False)
                 scm.addOutputField(field)
 
     if withZeroMagFlux:
-        scm.addOutputField(afwTable.Field["F"]("flux.zeromag",
-                                               "The flux corresponding to zero magnitude"))
+        if filterSuffix:
+            scm.addOutputField(_zeroMagField.copyRenamed("flux.zeromag"+suffix))
+        else:
+            if len(suffixes) == 0:
+                scm.addOutputField(_zeroMagField)
+            else:
+                for s in suffixes:
+                    scm.addOutputField(_zeroMagField.copyRenamed("flux.zeromag"+s))
 
     return scm
 
@@ -151,30 +176,22 @@ def strictMatch(cat1, cat2, matchRadius=1*afwGeom.arcseconds):
     schema2 = cat2.getSchema()
     suffixes = getCatSuffixes(cat2)
     for suffix in suffixes:
-        cat2Fields.extend(schema2.extract("*" + suffix + "$").keys())
+        cat2Fields.extend(schema2.extract("*" + suffix).keys())
     for id in bestMatches:
         m1, m2, d = bestMatches[id]
         record = cat.addNew()
         record.assign(m1, scm)
         for f in cat2Fields:
             record.set(f, m2.get(f))
-
     return cat
 
-def buildXY(hscCat, sgTable):
-    #print "Loading {0}...".format(hscSources)
-    #cat = afwTable.SourceCatalog.readFits(hscSources)
-    #print "Loading {0}...".format(selectSG)
-    #sgTable = afwTable.SimpleCatalog.readFits(selectSG)
-    # Alexie's catalog is in degrees and LSST catalogs are in radians
-    #sgTable["coord.ra"][:]  = np.radians(sgTable["coord.ra"])
-    #sgTable["coord.dec"][:] = np.radians(sgTable["coord.dec"])
-    
-    #print "Matching catalogs..."
-    matchRadius = 1*afwGeom.arcseconds
+def buildXY(hscCat, sgTable, matchRadius=1*afwGeom.arcseconds):
+
+    print "Matching with HST catalog"
     matchedSG = afwTable.matchRaDec(sgTable, hscCat, matchRadius, False)
+    print "Found {0} matcheswith HST objects".format(len(matchedSG))
     
-    #print "Building truth table..."
+    # Build truth table
     stellar = {}
     for m1, m2, d in matchedSG:
         id = m2.getId()
@@ -184,25 +201,38 @@ def buildXY(hscCat, sgTable):
         else:
             if d < stellar[id][1]:
                 stellar[id] = [isStar, d] # Only keep closest for now
-    
-    #print "Building arrays to train classifier..."
+    print "Of which I picked {0}".format(len(stellar)) 
+    # Build arrays to train classifier
+    suffixes = getCatSuffixes(hscCat)
+    print "suffixes=", suffixes
+    if len(suffixes) == 0:
+        suffixes = [""]
     X = []; Y = []
     for m in hscCat:
         id = m.getId()
         if id in stellar:
             ra = m.get("coord.ra")
             dec = m.get("coord.dec")
-            cmodelFlux = m.get("cmodel.flux")
-            psfFlux = m.get("flux.psf")
-            fluxMag0 = m.get("flux.zeromag")
-            if cmodelFlux <= 0.0 or psfFlux <= 0.0 or fluxMag0 <= 0.0:
+            cmodelMags = []
+            psfMags = []
+            extendedness = []
+            for s in suffixes:
+                cmodelFlux = m.get("cmodel.flux"+s)
+                psfFlux = m.get("flux.psf"+s)
+                fluxMag0 = m.get("flux.zeromag"+s)
+                if cmodelFlux <= 0.0 or psfFlux <= 0.0 or fluxMag0 <= 0.0:
+                    break
+                cmodelMags.append(-2.5*np.log10(cmodelFlux/fluxMag0))
+                psfMags.append(-2.5*np.log10(psfFlux/fluxMag0))
+                extendedness.append(-2.5*np.log10(psfFlux/cmodelFlux))
+            if len(cmodelMags) < len(suffixes):
                 continue
-            cmodelMag = -2.5*np.log10(cmodelFlux/fluxMag0)
-            psfMag = -2.5*np.log10(psfFlux/fluxMag0)
-            extendedness = -2.5*np.log10(psfFlux/cmodelFlux)
-            # Keep only the objects that have no nans
-            if not np.isnan(cmodelMag) and not np.isnan(extendedness):
-                X.append([id, ra, dec, psfMag, cmodelMag, extendedness])
+            if not np.any(np.isnan(cmodelMags)) and not np.any(np.isnan(extendedness)):
+                record = [id, ra, dec]
+                record.extend(psfMags)
+                record.extend(cmodelMags)
+                record.extend(extendedness)
+                X.append(record)
                 Y.append(stellar[id][0])
     X = np.array(X)
     Y = np.array(Y, dtype=int)
