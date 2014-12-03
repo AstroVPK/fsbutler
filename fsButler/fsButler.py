@@ -199,17 +199,17 @@ class fsButler(object):
     def fetchDataset(self, dataType='src', flags=None, immediate=True, withZeroMagFlux=False,
                      filterSuffix=None, scm=None, **dataId):
         """
-        Returns a list with all the data elemnts of type `dataType` that match the id `dataId`
+        Returns the union of all the data elements of type `dataType` that match the id `dataId`
     
         Keywords
         dataType: The type of data element we want to fetch
         flags: Flags for the data id
         immediate: If True the butler makes sure it returns the actual data and not a proxy of it
-        withZeroMagFlux: If true, an extra column will be added to the catalog with the zero
-                         magnitude flux.
-        filterSuffix: If present, a suffix corresponding to the filet will be appended to suffixable
+        withZeroMagFlux: If true, an extra pair of columns will be added to the catalog for the zero
+                         magnitude flux and its error estimate.
+        filterSuffix: If present, a suffix corresponding to the filter will be appended to suffixable
                 fields.
-        scm: If None generate a new schema mapper
+        scm: If None, generate a new schema mapper
         dataId: Dictionary of keywords that specify a dataId, if None all the data elements of type
                 `dataType` will be returned. If the id is complete it will only return a single data
                 element.
@@ -231,7 +231,7 @@ class fsButler(object):
                     if scm == None:
                         scm = utils.createSchemaMapper(dataElement, filterSuffix=filterSuffix, withZeroMagFlux=withZeroMagFlux)
                     outputSchema = scm.getOutputSchema()
-                    outputCat = afwTable.SourceCatalog(outputSchema)
+                    outputCat = afwTable.SimpleCatalog(outputSchema)
                     good = utils.goodSources(dataElement)
                     for i, record in enumerate(dataElement):
                         if good[i]:
@@ -241,8 +241,10 @@ class fsButler(object):
                                 if filterSuffix:
                                     suffix = utils._getFilterSuffix(filterSuffix)
                                     outputRecord.set('flux.zeromag'+suffix, fluxMag0)
+                                    outputRecord.set('flux.zeromag.err'+suffix, fluxMag0Err)
                                 else:
                                     outputRecord.set('flux.zeromag', fluxMag0)
+                                    outputRecord.set('flux.zeromag.err', fluxMag0Err)
                     dataset.append(outputCat)
                 else:
                     dataset.append(dataElement)

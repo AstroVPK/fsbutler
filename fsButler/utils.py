@@ -3,10 +3,14 @@ import numpy as np
 
 import lsst.afw.table as afwTable
 import lsst.afw.geom as afwGeom
+import lsst.analysis.utils as utils
+import lsst.afw.display.ds9 as ds9
 
 """
 Utility functions to process data elements delivered by fsButler
 """
+
+#TODO: Make these configurable options
 
 _fixedFields = ["id", "coord"]
 
@@ -14,7 +18,7 @@ _fixedPatterns = []
 
 _suffixableFields = ["parent",
                      "deblend.nchild",
-                     #"classification.extendedness",
+                     "classification.extendedness",
                      "flags.pixel.bad",
                      #"flux.kron.radius",
                      "flags.pixel.edge",
@@ -23,7 +27,9 @@ _suffixableFields = ["parent",
                      #"flags.pixel.saturated.any",
                      "flags.pixel.saturated.center",
                      "flux.psf",
-                     "cmodel.flux"]
+                     "flux.psf.err",
+                     "cmodel.flux",
+                     "cmodel.flux.err"]
 
 _suffixablePatterns = ["flux.zeromag*"]
                        #"flux.psf*",
@@ -33,6 +39,10 @@ _suffixRegex = re.compile(r'(_[grizy])$')
 
 _zeroMagField = afwTable.Field["F"]("flux.zeromag",
                                     "The flux corresponding to zero magnitude")
+_zeroMagErrField = afwTable.Field["F"]("flux.zeromag.err",
+                                       "The flux error corresponding to zero magnitude")
+_stellarField = afwTable.Field["Flag"]("stellar",
+                                       "If true, the object is known to be a star if false it's known not to be a star.")
 
 def _getFilterSuffix(filterSuffix):
     if filterSuffix == 'HSC-G':
@@ -72,7 +82,7 @@ def getCatSuffixes(cat):
     suffixes.sort(key=_suffixOrder)
     return suffixes
     
-def createSchemaMapper(cat, cat2=None, filterSuffix=None, withZeroMagFlux=False):
+def createSchemaMapper(cat, cat2=None, filterSuffix=None, withZeroMagFlux=False, withStellar=False):
 
     if cat2 and filterSuffix:
         raise ValueError("Can't use filterSuffix for two catalogs")
@@ -131,12 +141,17 @@ def createSchemaMapper(cat, cat2=None, filterSuffix=None, withZeroMagFlux=False)
     if withZeroMagFlux:
         if filterSuffix:
             scm.addOutputField(_zeroMagField.copyRenamed("flux.zeromag"+suffix))
+            scm.addOutputField(_zeroMagErrField.copyRenamed("flux.zeromag.err"+suffix))
         else:
             if len(suffixes) == 0:
                 scm.addOutputField(_zeroMagField)
             else:
                 for s in suffixes:
                     scm.addOutputField(_zeroMagField.copyRenamed("flux.zeromag"+s))
+                    scm.addOutputField(_zeroMagErrField.copyRenamed("flux.zeromag.err"+s))
+
+    if withStellar:
+        scm.addOutputField(_stellarField)
 
     return scm
 
@@ -157,6 +172,8 @@ def strictMatch(cat1, cat2, matchRadius=1*afwGeom.arcseconds):
     Match two catalogs using a one to one relation where each match is the closest
     object
     """
+    
+    #import ipdb; ipdb.set_trace()
 
     matched = afwTable.matchRaDec(cat1, cat2, matchRadius, True)
 
@@ -171,7 +188,7 @@ def strictMatch(cat1, cat2, matchRadius=1*afwGeom.arcseconds):
 
     scm = createSchemaMapper(cat1, cat2)
     schema = scm.getOutputSchema()
-    cat = afwTable.SourceCatalog(schema)
+    cat = afwTable.SimpleCatalog(schema)
     cat2Fields = []
     schema2 = cat2.getSchema()
     suffixes = getCatSuffixes(cat2)
@@ -189,7 +206,7 @@ def buildXY(hscCat, sgTable, matchRadius=1*afwGeom.arcseconds):
 
     print "Matching with HST catalog"
     matchedSG = afwTable.matchRaDec(sgTable, hscCat, matchRadius, False)
-    print "Found {0} matcheswith HST objects".format(len(matchedSG))
+    print "Found {0} matches with HST objects".format(len(matchedSG))
     
     # Build truth table
     stellar = {}
@@ -202,38 +219,28 @@ def buildXY(hscCat, sgTable, matchRadius=1*afwGeom.arcseconds):
             if d < stellar[id][1]:
                 stellar[id] = [isStar, d] # Only keep closest for now
     print "Of which I picked {0}".format(len(stellar)) 
-    # Build arrays to train classifier
-    suffixes = getCatSuffixes(hscCat)
-    print "suffixes=", suffixes
-    if len(suffixes) == 0:
-        suffixes = [""]
-    X = []; Y = []
+
+    scm = createSchemaMapper(hscCat, withStellar=True)
+    schema = scm.getOutputSchema()
+    cat = afwTable.SourceCatalog(schema)
+
     for m in hscCat:
         id = m.getId()
         if id in stellar:
-            ra = m.get("coord.ra")
-            dec = m.get("coord.dec")
-            cmodelMags = []
-            psfMags = []
-            extendedness = []
-            for s in suffixes:
-                cmodelFlux = m.get("cmodel.flux"+s)
-                psfFlux = m.get("flux.psf"+s)
-                fluxMag0 = m.get("flux.zeromag"+s)
-                if cmodelFlux <= 0.0 or psfFlux <= 0.0 or fluxMag0 <= 0.0:
-                    break
-                cmodelMags.append(-2.5*np.log10(cmodelFlux/fluxMag0))
-                psfMags.append(-2.5*np.log10(psfFlux/fluxMag0))
-                extendedness.append(-2.5*np.log10(psfFlux/cmodelFlux))
-            if len(cmodelMags) < len(suffixes):
-                continue
-            if not np.any(np.isnan(cmodelMags)) and not np.any(np.isnan(extendedness)):
-                record = [id, ra, dec]
-                record.extend(psfMags)
-                record.extend(cmodelMags)
-                record.extend(extendedness)
-                X.append(record)
-                Y.append(stellar[id][0])
-    X = np.array(X)
-    Y = np.array(Y, dtype=int)
-    return X, Y
+            record = cat.addNew()
+            record.assign(m, scm)
+            record.set('stellar', stellar[id][0])
+
+    return cat
+
+def displayObject(objId, fsButler, prefix=''):
+
+    dataType = prefix + '_calexp_sub'
+    info = utils.makeMapperInfo(fsButler.butler)
+    dataId = info.splitCoaddId(objId)
+    dataId.pop('objId')
+    src = fsButler.butler.get('deepCoadd_src', **dataId)
+    src = src[objId == src.get("id")][0]
+    bbox = src.getFootprint().getBBox()
+    im = fsButler.butler.get(dataType, bbox=bbox, imageOrigin="PARENT", **dataId)
+    ds9.mtv(im, frame=0)
