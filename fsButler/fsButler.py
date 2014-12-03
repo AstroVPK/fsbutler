@@ -249,7 +249,7 @@ class fsButler(object):
                 else:
                     dataset.append(dataElement)
             else:
-                print "WARNING: The data id {0} does not exist".format(id)
+                print "WARNING: The data id {0} does not exist for data type {1}".format(id,dataType)
     
         if len(dataset) == 0:
             return None
