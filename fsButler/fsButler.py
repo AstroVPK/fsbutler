@@ -165,7 +165,7 @@ class fsButler(object):
 
         if dataType == 'src' or dataType == 'calexp_md':
             dataIds = fsButler.singleExpIds(dataRoot, **dataId)
-        elif dataType == 'deepCoadd_src' or dataType == 'deepCoadd_calexp_md':
+        elif dataType == 'deepCoadd' or dataType == 'deepCoadd_src' or dataType == 'deepCoadd_calexp_md':
             dataIds = fsButler.deepCoaddIds(dataRoot, **dataId)
         else:
             raise ValueError("Data type {0} is not implemented".format(dataType))
@@ -196,6 +196,22 @@ class fsButler(object):
         else:
             raise ValueError("Unkown dataType")
 
+    def _getZeroMagFlux(self, dataType, **id):
+        """
+        Get the zero magnitude flux for the given data type and data id
+        """
+        calexpType = self._getCalexpType(dataType)
+        if self.butler.datasetExists(calexpType, **id):
+            calexp_md = self.fetchDataset(calexpType, **id)
+            calib = afwImage.Calib(calexp_md)
+            fluxMag0, fluxMag0Err = calib.getFluxMag0()
+        else:
+            calexpType = dataType[:-4]
+            calexp = self.fetchDataset(calexpType, **id)
+            calib = calexp.getCalib()
+            fluxMag0, fluxMag0Err = calib.getFluxMag0()
+        return fluxMag0, fluxMag0Err
+
     def fetchDataset(self, dataType='src', flags=None, immediate=True, withZeroMagFlux=False,
                      filterSuffix=None, scm=None, **dataId):
         """
@@ -217,16 +233,12 @@ class fsButler(object):
     
         dataIds = self.getIds(self.dataRoot, dataType, **dataId)
     
-        if withZeroMagFlux:
-            calexpType = self._getCalexpType(dataType)
         dataset = []
         for id in dataIds:
             if self.butler.datasetExists(dataType, **id):
                 dataElement = self.butler.get(dataType, flags=flags, immediate=immediate, **id)
                 if withZeroMagFlux:
-                    calexp_md = self.fetchDataset(calexpType, **id)
-                    calib = afwImage.Calib(calexp_md)
-                    fluxMag0, fluxMag0Err = calib.getFluxMag0()
+                    fluxMag0, fluxMag0Err = self._getZeroMagFlux(dataType, **id)
                 if isinstance(dataElement, afwTable.SourceCatalog):
                     if scm == None:
                         scm = utils.createSchemaMapper(dataElement, filterSuffix=filterSuffix, withZeroMagFlux=withZeroMagFlux)
