@@ -1,4 +1,5 @@
 import os
+import numpy as np
 
 import lsst.afw.image as afwImage
 import lsst.afw.table as afwTable
@@ -199,21 +200,25 @@ class fsButler(object):
     def _getZeroMagFlux(self, dataType, **id):
         """
         Get the zero magnitude flux for the given data type and data id
+        It also returns the psf associated with the data id in case it's needed
+        later (e.g. when withSeeing=True)
         """
         calexpType = self._getCalexpType(dataType)
         if self.butler.datasetExists(calexpType, **id):
             calexp_md = self.fetchDataset(calexpType, **id)
+            psf = calexp_md.getPsf()
             calib = afwImage.Calib(calexp_md)
             fluxMag0, fluxMag0Err = calib.getFluxMag0()
         else:
             calexpType = dataType[:-4]
             calexp = self.fetchDataset(calexpType, **id)
+            psf = calexp.getPsf()
             calib = calexp.getCalib()
             fluxMag0, fluxMag0Err = calib.getFluxMag0()
-        return fluxMag0, fluxMag0Err
+        return fluxMag0, fluxMag0Err, psf
 
     def fetchDataset(self, dataType='src', flags=None, immediate=True, withZeroMagFlux=False,
-                     filterSuffix=None, scm=None, **dataId):
+                     filterSuffix=None, scm=None, withSeeing=True, **dataId):
         """
         Returns the union of all the data elements of type `dataType` that match the id `dataId`
     
@@ -238,13 +243,16 @@ class fsButler(object):
             if self.butler.datasetExists(dataType, **id):
                 dataElement = self.butler.get(dataType, flags=flags, immediate=immediate, **id)
                 if withZeroMagFlux:
-                    fluxMag0, fluxMag0Err = self._getZeroMagFlux(dataType, **id)
+                    fluxMag0, fluxMag0Err, psf = self._getZeroMagFlux(dataType, **id)
                 if isinstance(dataElement, afwTable.SourceCatalog):
                     if scm == None:
-                        scm = utils.createSchemaMapper(dataElement, filterSuffix=filterSuffix, withZeroMagFlux=withZeroMagFlux)
+                        scm = utils.createSchemaMapper(dataElement, filterSuffix=filterSuffix,
+                                                       withZeroMagFlux=withZeroMagFlux,
+                                                       withSeeing=withSeeing)
                     outputSchema = scm.getOutputSchema()
                     outputCat = afwTable.SimpleCatalog(outputSchema)
                     good = utils.goodSources(dataElement)
+                    outputCat.reserve(np.sum(good))
                     for i, record in enumerate(dataElement):
                         if good[i]:
                             outputRecord = outputCat.addNew()
@@ -257,6 +265,18 @@ class fsButler(object):
                                 else:
                                     outputRecord.set('flux.zeromag', fluxMag0)
                                     outputRecord.set('flux.zeromag.err', fluxMag0Err)
+                            if withSeeing:
+                                pos = record.getCentroid()
+                                try:
+                                    seeing = psf.computeShape(pos).getDeterminantRadius()
+                                except:
+                                    seeing = psf.computeShape().getDeterminantRadius()
+                                if filterSuffix:
+                                    pos = record.getCentroid()
+                                    suffix = utils._getFilterSuffix(filterSuffix)
+                                    outputRecord.set('seeing'+suffix, seeing)
+                                else:
+                                    outputRecord.set('seeing', seeing)
                     dataset.append(outputCat)
                 else:
                     dataset.append(dataElement)
