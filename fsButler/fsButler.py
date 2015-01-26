@@ -247,6 +247,9 @@ class fsButler(object):
     
         dataIds = self.getIds(self.dataRoot, dataType, **dataId)
     
+        if filterSuffix:
+            suffix = utils._getFilterSuffix(filterSuffix)
+
         dataset = []
         for id in dataIds:
             if self.butler.datasetExists(dataType, **id):
@@ -264,18 +267,25 @@ class fsButler(object):
                     outputCat = afwTable.SimpleCatalog(outputSchema)
                     good = utils.goodSources(dataElement)
                     outputCat.reserve(np.sum(good))
+                    if withZeroMagFlux:
+                        if filterSuffix:
+                            zeroKey = outputSchema.find('flux.zeromag'+suffix).key
+                            zeroErrKey = outputSchema.find('flux.zeromag.err'+suffix).key
+                        else:
+                            zeroKey = outputSchema.find('flux.zeromag').key
+                            zeroErrKey = outputSchema.find('flux.zeromag.err').key
+                    if withSeeing:
+                        if filterSuffix:
+                            seeingKey = outputSchema.find('seeing'+suffix).key
+                        else:
+                            seeingKey = outputSchema.find('seeing').key
                     for i, record in enumerate(dataElement):
                         if good[i]:
                             outputRecord = outputCat.addNew()
                             outputRecord.assign(record, scm)
                             if withZeroMagFlux:
-                                if filterSuffix:
-                                    suffix = utils._getFilterSuffix(filterSuffix)
-                                    outputRecord.set('flux.zeromag'+suffix, fluxMag0)
-                                    outputRecord.set('flux.zeromag.err'+suffix, fluxMag0Err)
-                                else:
-                                    outputRecord.set('flux.zeromag', fluxMag0)
-                                    outputRecord.set('flux.zeromag.err', fluxMag0Err)
+                                outputRecord.set(zeroKey, fluxMag0)
+                                outputRecord.set(zeroErrKey, fluxMag0Err)
                             if withSeeing:
                                 if seeingAtPos:
                                     pos = record.getCentroid()
@@ -285,12 +295,7 @@ class fsButler(object):
                                         seeing = psf.computeShape().getDeterminantRadius()
                                 else:
                                     seeing = seeingAvgPos
-                                if filterSuffix:
-                                    pos = record.getCentroid()
-                                    suffix = utils._getFilterSuffix(filterSuffix)
-                                    outputRecord.set('seeing'+suffix, seeing)
-                                else:
-                                    outputRecord.set('seeing', seeing)
+                                outputRecord.set(seeingKey, seeing)
                     dataset.append(outputCat)
                 else:
                     dataset.append(dataElement)
