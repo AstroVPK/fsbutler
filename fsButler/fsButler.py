@@ -194,6 +194,10 @@ class fsButler(object):
             return 'calexp_md'
         elif dataType == 'deepCoadd_src':
             return 'deepCoadd_calexp_md'
+        elif dataType == 'calexp_md' or dataType == 'deepCoadd_calexp_md':
+            return dataType
+        elif dataType == 'calexp' or dataType == 'deepCoadd':
+            return dataType
         else:
             raise ValueError("Unkown dataType")
 
@@ -205,20 +209,20 @@ class fsButler(object):
         """
         calexpType = self._getCalexpType(dataType)
         if self.butler.datasetExists(calexpType, **id):
-            calexp_md = self.fetchDataset(calexpType, **id)
+            calexp_md = self.butler.get(calexpType, **id)
             psf = calexp_md.getPsf()
             calib = afwImage.Calib(calexp_md)
             fluxMag0, fluxMag0Err = calib.getFluxMag0()
         else:
             calexpType = dataType[:-4]
-            calexp = self.fetchDataset(calexpType, **id)
+            calexp = self.butler.get(calexpType, **id)
             psf = calexp.getPsf()
             calib = calexp.getCalib()
             fluxMag0, fluxMag0Err = calib.getFluxMag0()
         return fluxMag0, fluxMag0Err, psf
 
-    def fetchDataset(self, dataType='src', flags=None, immediate=True, withZeroMagFlux=False,
-                     filterSuffix=None, scm=None, withSeeing=True, **dataId):
+    def fetchDataset(self, dataType='src', flags=None, immediate=True, withZeroMagFlux=True,
+                     filterSuffix=None, scm=None, withSeeing=True, seeingAtPos=False, **dataId):
         """
         Returns the union of all the data elements of type `dataType` that match the id `dataId`
     
@@ -229,11 +233,16 @@ class fsButler(object):
         withZeroMagFlux: If true, an extra pair of columns will be added to the catalog for the zero
                          magnitude flux and its error estimate.
         filterSuffix: If present, a suffix corresponding to the filter will be appended to suffixable
-                fields.
+                      fields. For example if dataId has `filter='HSC-I'`, you can set
+                      `filterSiffix=i` to append a `.i` to all the column names.
         scm: If None, generate a new schema mapper
         dataId: Dictionary of keywords that specify a dataId, if None all the data elements of type
                 `dataType` will be returned. If the id is complete it will only return a single data
                 element.
+        withSeeing: If true add a column for the FWHM of the PSF at each source's location.
+        seeingAtPos: If true compute the seeing at each object's position, if False simply use
+                     the seeing at the average position of the patch (in the case of coadds) or
+                     ccd (in the case of single exposures).
         """
     
         dataIds = self.getIds(self.dataRoot, dataType, **dataId)
@@ -242,8 +251,10 @@ class fsButler(object):
         for id in dataIds:
             if self.butler.datasetExists(dataType, **id):
                 dataElement = self.butler.get(dataType, flags=flags, immediate=immediate, **id)
-                if withZeroMagFlux:
+                if withZeroMagFlux or withSeeing:
                     fluxMag0, fluxMag0Err, psf = self._getZeroMagFlux(dataType, **id)
+                    # Compute seeing at average position
+                    seeingAvgPos = psf.computeShape().getDeterminantRadius()
                 if isinstance(dataElement, afwTable.SourceCatalog):
                     if scm == None:
                         scm = utils.createSchemaMapper(dataElement, filterSuffix=filterSuffix,
@@ -266,11 +277,14 @@ class fsButler(object):
                                     outputRecord.set('flux.zeromag', fluxMag0)
                                     outputRecord.set('flux.zeromag.err', fluxMag0Err)
                             if withSeeing:
-                                pos = record.getCentroid()
-                                try:
-                                    seeing = psf.computeShape(pos).getDeterminantRadius()
-                                except:
-                                    seeing = psf.computeShape().getDeterminantRadius()
+                                if seeingAtPos:
+                                    pos = record.getCentroid()
+                                    try:
+                                        seeing = psf.computeShape(pos).getDeterminantRadius()
+                                    except:
+                                        seeing = psf.computeShape().getDeterminantRadius()
+                                else:
+                                    seeing = seeingAvgPos
                                 if filterSuffix:
                                     pos = record.getCentroid()
                                     suffix = utils._getFilterSuffix(filterSuffix)
