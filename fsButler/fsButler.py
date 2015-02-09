@@ -3,6 +3,7 @@ import numpy as np
 
 import lsst.afw.image as afwImage
 import lsst.afw.table as afwTable
+import lsst.afw.geom as afwGeom
 
 from . import utils
 
@@ -201,7 +202,32 @@ class fsButler(object):
         else:
             raise ValueError("Unkown dataType")
 
-    def _getZeroMagFlux(self, dataType, **id):
+    def _getCoaddExpTime(self, coadd):
+        """
+        Get the total exposure time associated with a coadd patch by adding up
+        the exposure times of the individual visits used to build the coadd.
+        """
+        ccdInputs = coadd.getInfo().getCoaddInputs().ccds
+
+        totalExpTime = 0.0
+        expTimeVisits = set()
+
+        for i in range(len(ccdInputs)):
+            input = ccdInputs[i]
+            ccd = input.get("ccd")
+            v = input.get("visit")
+            bbox = input.getBBox()
+            # It's quicker to not read all the pixels, so just read 1
+            calexp = self.butler.get("calexp_sub", bbox=afwGeom.BoxI(afwGeom.PointI(0, 0), afwGeom.ExtentI(1, 1)),
+                                visit=int(v), ccd=ccd)
+            calib = calexp.getCalib()
+            exptime = calib.getExptime()
+            if v not in expTimeVisits:
+                totalExpTime += exptime
+                expTimeVisits.add(v)
+        return totalExpTime
+
+    def _getCalibData(self, dataType, **id):
         """
         Get the zero magnitude flux for the given data type and data id
         It also returns the psf associated with the data id in case it's needed
@@ -209,20 +235,23 @@ class fsButler(object):
         """
         calexpType = self._getCalexpType(dataType)
         if self.butler.datasetExists(calexpType, **id):
-            calexp_md = self.butler.get(calexpType, **id)
-            psf = calexp_md.getPsf()
-            calib = afwImage.Calib(calexp_md)
-            fluxMag0, fluxMag0Err = calib.getFluxMag0()
+            calexp = self.butler.get(calexpType, **id)
+            calib = afwImage.Calib(calexp)
         else:
             calexpType = dataType[:-4]
             calexp = self.butler.get(calexpType, **id)
-            psf = calexp.getPsf()
             calib = calexp.getCalib()
-            fluxMag0, fluxMag0Err = calib.getFluxMag0()
-        return fluxMag0, fluxMag0Err, psf
+        psf = calexp.getPsf()
+        fluxMag0, fluxMag0Err = calib.getFluxMag0()
+        if 'deepCoadd' in dataType:
+            exptime = self._getCoaddExpTime(calexp)
+        else:
+            exptime = calib.getExptime()
+        return fluxMag0, fluxMag0Err, psf, exptime
 
     def fetchDataset(self, dataType='src', flags=None, immediate=True, withZeroMagFlux=True,
-                     filterSuffix=None, scm=None, withSeeing=True, seeingAtPos=False, **dataId):
+                     filterSuffix=None, scm=None, withSeeing=True, seeingAtPos=False, 
+                     withExptime=True, **dataId):
         """
         Returns the union of all the data elements of type `dataType` that match the id `dataId`
     
@@ -243,6 +272,7 @@ class fsButler(object):
         seeingAtPos: If true compute the seeing at each object's position, if False simply use
                      the seeing at the average position of the patch (in the case of coadds) or
                      ccd (in the case of single exposures).
+        withExptime: If true add a column for the exposure time.
         """
     
         dataIds = self.getIds(self.dataRoot, dataType, **dataId)
@@ -254,15 +284,16 @@ class fsButler(object):
         for id in dataIds:
             if self.butler.datasetExists(dataType, **id):
                 dataElement = self.butler.get(dataType, flags=flags, immediate=immediate, **id)
-                if withZeroMagFlux or withSeeing:
-                    fluxMag0, fluxMag0Err, psf = self._getZeroMagFlux(dataType, **id)
+                if withZeroMagFlux or withSeeing or withExptime:
+                    fluxMag0, fluxMag0Err, psf, exptime = self._getCalibData(dataType, **id)
                     # Compute seeing at average position
                     seeingAvgPos = psf.computeShape().getDeterminantRadius()
                 if isinstance(dataElement, afwTable.SourceCatalog):
                     if scm == None:
                         scm = utils.createSchemaMapper(dataElement, filterSuffix=filterSuffix,
                                                        withZeroMagFlux=withZeroMagFlux,
-                                                       withSeeing=withSeeing)
+                                                       withSeeing=withSeeing,
+                                                       withExptime=withExptime)
                     outputSchema = scm.getOutputSchema()
                     outputCat = afwTable.SimpleCatalog(outputSchema)
                     good = utils.goodSources(dataElement)
@@ -279,6 +310,11 @@ class fsButler(object):
                             seeingKey = outputSchema.find('seeing'+suffix).key
                         else:
                             seeingKey = outputSchema.find('seeing').key
+                    if withExptime:
+                        if filterSuffix:
+                            exptimeKey = outputSchema.find('exptime'+suffix).key
+                        else:
+                            exptimeKey = outputSchema.find('exptime').key
                     for i, record in enumerate(dataElement):
                         if good[i]:
                             outputRecord = outputCat.addNew()
@@ -296,6 +332,8 @@ class fsButler(object):
                                 else:
                                     seeing = seeingAvgPos
                                 outputRecord.set(seeingKey, seeing)
+                            if withExptime:
+                                outputRecord.set(exptimeKey, exptime)
                     dataset.append(outputCat)
                 else:
                     dataset.append(dataElement)

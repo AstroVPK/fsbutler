@@ -31,18 +31,21 @@ _suffixablePatterns = ["flux.zeromag*",
                        "flux.psf*",
                        "cmodel*",
                        "centroid*",
-                       "seeing*"]
+                       "seeing*",
+                       "exptime*"]
 
 _suffixRegex = re.compile(r'(_[grizy])$')
 
 _zeroMagField = afwTable.Field["F"]("flux.zeromag",
-                                    "The flux corresponding to zero magnitude")
+                                    "The flux corresponding to zero magnitude.")
 _zeroMagErrField = afwTable.Field["F"]("flux.zeromag.err",
-                                       "The flux error corresponding to zero magnitude")
+                                       "The flux error corresponding to zero magnitude.")
 _stellarField = afwTable.Field["Flag"]("stellar",
                                        "If true, the object is known to be a star if false it's known not to be a star.")
 _seeingField = afwTable.Field["F"]("seeing",
-                                    "The PSF FWHM at the object's position")
+                                    "The PSF FWHM.")
+_exptimeField = afwTable.Field["F"]("exptime",
+                                    "Exposure time.")
 
 def _getFilterSuffix(filterSuffix):
     if filterSuffix == 'HSC-G':
@@ -83,7 +86,7 @@ def getCatSuffixes(cat):
     return suffixes
     
 def createSchemaMapper(cat, cat2=None, filterSuffix=None, withZeroMagFlux=False,
-                       withStellar=False, withSeeing=False):
+                       withStellar=False, withSeeing=False, withExptime=False):
 
     if cat2 and filterSuffix:
         raise ValueError("Can't use filterSuffix for two catalogs")
@@ -161,6 +164,16 @@ def createSchemaMapper(cat, cat2=None, filterSuffix=None, withZeroMagFlux=False,
             else:
                 for s in suffixes:
                     scm.addOutputField(_seeingField.copyRenamed("seeing"+s))
+
+    if withExptime:
+        if filterSuffix:
+            scm.addOutputField(_exptimeField.copyRenamed("exptime"+suffix))
+        else:
+            if len(suffixes) == 0:
+                scm.addOutputField(_exptimeField)
+            else:
+                for s in suffixes:
+                    scm.addOutputField(_exptimeField.copyRenamed("exptime"+s))
 
     if withStellar:
         scm.addOutputField(_stellarField)
@@ -266,7 +279,7 @@ def displayObject(objId, fsButler, prefix='', frame=None):
     return im
 
 def showCoaddInputs(objId, fsButler, coaddType="deepCoadd"):
-    """Show the inputs for the specified dataId, optionally at the specified position
+    """Show the inputs for the specified object Id, optionally at the specified position
     @param fsButler    Butler to provide inputs
     @param coaddType Type of coadd to examine
     """
