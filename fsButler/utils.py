@@ -192,24 +192,35 @@ def goodSources(cat):
     good = np.logical_and(good, cat.get("deblend.nchild") == 0)
     return good
 
-def strictMatch(cat1, cat2, matchRadius=1*afwGeom.arcseconds):
+def strictMatch(cat1, cat2, matchRadius=1*afwGeom.arcseconds, includeMismatches=True):
     """
     Match two catalogs using a one to one relation where each match is the closest
     object
     """
     
     #import ipdb; ipdb.set_trace()
+    mc = afwTable.MatchControl()
+    mc.includeMismatches = includeMismatches
 
-    matched = afwTable.matchRaDec(cat1, cat2, matchRadius, True)
+    #matched = afwTable.matchRaDec(cat1, cat2, matchRadius, True)
+    matched = afwTable.matchRaDec(cat1, cat2, matchRadius, mc)
 
     bestMatches = {}
+    noMatch = []
     for m1, m2, d in matched:
-        id = m2.getId()
-        if id not in bestMatches:
-            bestMatches[id] = (m1, m2, d)
+        if m2 is None:
+            noMatch.append(m1)
         else:
-            if d < bestMatches[id][2]:
+            id = m2.getId()
+            if id not in bestMatches:
                 bestMatches[id] = (m1, m2, d)
+            else:
+                if d < bestMatches[id][2]:
+                    bestMatches[id] = (m1, m2, d)
+
+    if includeMismatches:
+        print "{0} objects from {1} in the first catalog had no match in the second catalog.".format(len(noMatch), len(cat1))
+        print "{0} objects from the first catalog with a match in the second catalog were not the closest match.".format(len(matched) - len(noMatch) - len(bestMatches))
 
     scm = createSchemaMapper(cat1, cat2)
     schema = scm.getOutputSchema()
@@ -231,23 +242,48 @@ def strictMatch(cat1, cat2, matchRadius=1*afwGeom.arcseconds):
             record.set(catKeys[i], m2.get(cat2Keys[i]))
     return cat
 
-def buildXY(hscCat, sgTable, matchRadius=1*afwGeom.arcseconds):
+def matchMultiBand(butler, dataType, filters=['HSC-G', 'HSC-R', 'HSC-I', 'HSC-Z', 'HSC-Y'], **kargs):
+    cats = []
+    for f in filters:
+        cat = butler.fetchDataset(dataType, filterSuffix=f, filter=f, **kargs)
+        cats.append(cat)
+
+    matched = cats[0]
+
+    for i in range(1, len(filters)):
+        matched = strictMatch(matched, cats[i])
+    
+    return matched
+
+def buildXY(hscCat, sgTable, matchRadius=1*afwGeom.arcseconds, includeMismatches=True):
+
+    mc = afwTable.MatchControl()
+    mc.includeMismatches = includeMismatches
 
     print "Matching with HST catalog"
-    matchedSG = afwTable.matchRaDec(sgTable, hscCat, matchRadius, False)
+    matchedSG = afwTable.matchRaDec(hscCat, sgTable, matchRadius, mc)
     print "Found {0} matches with HST objects".format(len(matchedSG))
     
     # Build truth table
     stellar = {}
     classKey = sgTable.getSchema().find('mu.class').key
+    noMatch = []
     for m1, m2, d in matchedSG:
-        id = m2.getId()
-        isStar = (m1.get(classKey) == 2)
-        if id not in stellar:
-            stellar[id] = [isStar, d, m2]
+        if m2 is None:
+            noMatch.append(m1)
         else:
-            if d < stellar[id][1]:
-                stellar[id] = [isStar, d, m2] # Only keep closest for now
+            id = m2.getId()
+            isStar = (m2.get(classKey) == 2)
+            if id not in stellar:
+                stellar[id] = [isStar, d, m1]
+            else:
+                if d < stellar[id][1]:
+                    stellar[id] = [isStar, d, m1] # Only keep closest for now
+
+    if includeMismatches:
+        print "{0} objects from {1} in the HSC catalog had no match in the HST catalog.".format(len(noMatch), len(hscCat))
+        print "{0} objects from the HSC catalog with a match in the HST catalog were not the closest match.".format(len(matchedSG) - len(noMatch) - len(stellar))
+
     print "Of which I picked {0}".format(len(stellar)) 
 
     scm = createSchemaMapper(hscCat, withStellar=True)
