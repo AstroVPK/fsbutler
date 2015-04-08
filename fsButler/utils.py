@@ -3,6 +3,7 @@ import numpy as np
 
 import lsst.afw.table as afwTable
 import lsst.afw.geom as afwGeom
+import lsst.afw.image as afwImage
 import lsst.analysis.utils as utils
 import lsst.afw.display.ds9 as ds9
 
@@ -270,7 +271,7 @@ def buildXY(hscCat, sgTable, matchRadius=1*afwGeom.arcseconds, includeMismatches
     noMatch = []
     for m1, m2, d in matchedSG:
         if m2 is None:
-            noMatch.append(m1)
+            noMatch.append(m1.getId())
         else:
             id = m2.getId()
             isStar = (m2.get(classKey) == 2)
@@ -298,19 +299,24 @@ def buildXY(hscCat, sgTable, matchRadius=1*afwGeom.arcseconds, includeMismatches
         record.assign(m2, scm)
         record.set(stellarKey, isStar)
 
+    if includeMismatches:
+        return cat, noMatch
     return cat
 
-def displayObject(objId, fsButler, prefix='', frame=None):
+def displayObject(objId, fsButler, dataType='deepCoadd', nPixel=15, frame=None):
     #TODO: Enable single exposure objects
-    #dataType = prefix + '_calexp_sub'
-    dataType = prefix + '_sub'
     info = utils.makeMapperInfo(fsButler.butler)
     dataId = info.splitCoaddId(objId)
     dataId.pop('objId')
-    src = fsButler.butler.get('deepCoadd_src', **dataId)
+    src = fsButler.butler.get(dataType+'_src', immediate=True, **dataId)
     src = src[objId == src.get("id")][0]
-    bbox = src.getFootprint().getBBox()
-    im = fsButler.butler.get(dataType, bbox=bbox, imageOrigin="PARENT", **dataId)
+    coord = src.getCoord()
+    de = fsButler.butler.get(dataType, **dataId)
+    pixel = de.getWcs().skyToPixel(coord)
+    pixel = afwGeom.Point2I(pixel)
+    bbox = afwGeom.Box2I(pixel, pixel)
+    bbox.grow(nPixel)
+    im = afwImage.ExposureF(de, bbox, afwImage.PARENT)
     ds9.mtv(im, frame=frame)
     return im
 
