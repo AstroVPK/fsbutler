@@ -298,6 +298,7 @@ class fsButler(object):
                     outputCat = afwTable.SimpleCatalog(outputSchema)
                     good = utils.goodSources(dataElement)
                     outputCat.reserve(np.sum(good))
+                    idKey = outputSchema.find('multId'+suffix).key
                     if withZeroMagFlux:
                         if filterSuffix:
                             zeroKey = outputSchema.find('flux.zeromag'+suffix).key
@@ -319,6 +320,7 @@ class fsButler(object):
                         if good[i]:
                             outputRecord = outputCat.addNew()
                             outputRecord.assign(record, scm)
+                            outputRecord.set(idKey, record.getId())
                             if withZeroMagFlux:
                                 outputRecord.set(zeroKey, fluxMag0)
                                 outputRecord.set(zeroErrKey, fluxMag0Err)

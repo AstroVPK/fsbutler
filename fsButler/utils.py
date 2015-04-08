@@ -33,7 +33,8 @@ _suffixablePatterns = ["flux.zeromag*",
                        "cmodel*",
                        "centroid*",
                        "seeing*",
-                       "exptime*"]
+                       "exptime*",
+                       "multId*"]
 
 _suffixRegex = re.compile(r'(_[grizy])$')
 
@@ -43,10 +44,14 @@ _zeroMagErrField = afwTable.Field["F"]("flux.zeromag.err",
                                        "The flux error corresponding to zero magnitude.")
 _stellarField = afwTable.Field["Flag"]("stellar",
                                        "If true, the object is known to be a star if false it's known not to be a star.")
+_magAutoField = afwTable.Field["F"]("mag.auto",
+                                    "The magnitude computed by SExtractor in the HST catalog.")
 _seeingField = afwTable.Field["F"]("seeing",
                                     "The PSF FWHM.")
 _exptimeField = afwTable.Field["F"]("exptime",
                                     "Exposure time.")
+_idField = afwTable.Field["L"]("multId",
+                               "Multiple id, this field is in place to keep track of the ids of the matches in other catalogs/bands")
 
 def _getFilterSuffix(filterSuffix):
     if filterSuffix == 'HSC-G':
@@ -89,12 +94,12 @@ def getCatSuffixes(cat):
 def createSchemaMapper(cat, cat2=None, filterSuffix=None, withZeroMagFlux=False,
                        withStellar=False, withSeeing=False, withExptime=False):
 
-    if cat2 and filterSuffix:
+    if cat2 is not None and filterSuffix:
         raise ValueError("Can't use filterSuffix for two catalogs")
 
     suffixes = getCatSuffixes(cat)
-    if len(suffixes) > 0 and filterSuffix:
-        raise ValueError("Can't add a suffix to a catalog that already has one")
+    if len(suffixes) > 0 and filterSuffix is not None:
+        raise ValueError("Can't add a suffix to a catalog that already has suffixes")
 
     schema = cat.getSchema()
     scm = afwTable.SchemaMapper(schema)
@@ -107,10 +112,11 @@ def createSchemaMapper(cat, cat2=None, filterSuffix=None, withZeroMagFlux=False,
             scm.addMapping(schema.find(f).getKey())
 
     # Now suffixable fields and patterns
-    if filterSuffix:
+    if filterSuffix is not None:
         suffix = _getFilterSuffix(filterSuffix)
+        scm.addOutputField(_idField.copyRenamed("multId"+suffix))
     for f in _suffixableFields:
-        if filterSuffix:
+        if filterSuffix is not None:
             field = schema.find(f).getField()
             newField = field.copyRenamed(f + suffix)
             scm.addMapping(schema.find(f).getKey(), newField)
@@ -130,7 +136,7 @@ def createSchemaMapper(cat, cat2=None, filterSuffix=None, withZeroMagFlux=False,
                 # The extract command gets all the suffixes for me
                 scm.addMapping(schema.find(f).getKey())
 
-    if cat2:
+    if cat2 is not None:
         suffixes2 = getCatSuffixes(cat2)
         schema2 = cat2.getSchema()
         for f in _suffixableFields:
@@ -178,6 +184,7 @@ def createSchemaMapper(cat, cat2=None, filterSuffix=None, withZeroMagFlux=False,
 
     if withStellar:
         scm.addOutputField(_stellarField)
+        scm.addOutputField(_magAutoField)
 
     return scm
 
@@ -199,7 +206,6 @@ def strictMatch(cat1, cat2, matchRadius=1*afwGeom.arcseconds, includeMismatches=
     object
     """
     
-    #import ipdb; ipdb.set_trace()
     mc = afwTable.MatchControl()
     mc.includeMismatches = includeMismatches
 
@@ -268,6 +274,7 @@ def buildXY(hscCat, sgTable, matchRadius=1*afwGeom.arcseconds, includeMismatches
     # Build truth table
     stellar = {}
     classKey = sgTable.getSchema().find('mu.class').key
+    magAutoKey = sgTable.getSchema().find('mag.auto').key
     noMatch = []
     for m1, m2, d in matchedSG:
         if m2 is None:
@@ -275,11 +282,12 @@ def buildXY(hscCat, sgTable, matchRadius=1*afwGeom.arcseconds, includeMismatches
         else:
             id = m2.getId()
             isStar = (m2.get(classKey) == 2)
+            magAuto = m2.get(magAutoKey)
             if id not in stellar:
-                stellar[id] = [isStar, d, m1]
+                stellar[id] = [isStar, magAuto, d, m1]
             else:
-                if d < stellar[id][1]:
-                    stellar[id] = [isStar, d, m1] # Only keep closest for now
+                if d < stellar[id][2]:
+                    stellar[id] = [isStar, magAuto, d, m1] # Only keep closest for now
 
     if includeMismatches:
         print "{0} objects from {1} in the HSC catalog had no match in the HST catalog.".format(len(noMatch), len(hscCat))
@@ -292,15 +300,18 @@ def buildXY(hscCat, sgTable, matchRadius=1*afwGeom.arcseconds, includeMismatches
     cat = afwTable.SourceCatalog(schema)
     cat.reserve(len(stellar))
     stellarKey = schema.find('stellar').key
+    magAutoKey = schema.find('mag.auto').key
 
     for id in stellar:
-        isStar, d, m2 = stellar[id]
+        isStar, magAuto, d, m2 = stellar[id]
         record = cat.addNew()
         record.assign(m2, scm)
         record.set(stellarKey, isStar)
+        record.set(magAutoKey, magAuto)
 
     if includeMismatches:
         return cat, noMatch
+
     return cat
 
 def displayObject(objId, fsButler, dataType='deepCoadd', nPixel=15, frame=None):
