@@ -192,7 +192,7 @@ class fsButler(object):
     @staticmethod
     def _getCalexpType(dataType):
         if dataType == 'src':
-            return 'calexp_md'
+            return 'calexp'
         elif dataType == 'deepCoadd_src':
             return 'deepCoadd_calexp_md'
         elif dataType == 'calexp_md' or dataType == 'deepCoadd_calexp_md':
@@ -236,7 +236,10 @@ class fsButler(object):
         calexpType = self._getCalexpType(dataType)
         if self.butler.datasetExists(calexpType, **id):
             calexp = self.butler.get(calexpType, **id)
-            calib = afwImage.Calib(calexp)
+            try:
+                calib = afwImage.Calib(calexp)
+            except NotImplementedError:
+                calib = calexp.getCalib()
         else:
             calexpType = dataType[:-4]
             calexp = self.butler.get(calexpType, **id)
@@ -277,7 +280,7 @@ class fsButler(object):
     
         dataIds = self.getIds(self.dataRoot, dataType, **dataId)
     
-        if filterSuffix:
+        if filterSuffix is not None:
             suffix = utils._getFilterSuffix(filterSuffix)
 
         dataset = []
@@ -298,21 +301,22 @@ class fsButler(object):
                     outputCat = afwTable.SimpleCatalog(outputSchema)
                     good = utils.goodSources(dataElement)
                     outputCat.reserve(np.sum(good))
-                    idKey = outputSchema.find('multId'+suffix).key
+                    if filterSuffix is not None:
+                        idKey = outputSchema.find('multId'+suffix).key
                     if withZeroMagFlux:
-                        if filterSuffix:
+                        if filterSuffix is not None:
                             zeroKey = outputSchema.find('flux.zeromag'+suffix).key
                             zeroErrKey = outputSchema.find('flux.zeromag.err'+suffix).key
                         else:
                             zeroKey = outputSchema.find('flux.zeromag').key
                             zeroErrKey = outputSchema.find('flux.zeromag.err').key
                     if withSeeing:
-                        if filterSuffix:
+                        if filterSuffix is not None:
                             seeingKey = outputSchema.find('seeing'+suffix).key
                         else:
                             seeingKey = outputSchema.find('seeing').key
                     if withExptime:
-                        if filterSuffix:
+                        if filterSuffix is not None:
                             exptimeKey = outputSchema.find('exptime'+suffix).key
                         else:
                             exptimeKey = outputSchema.find('exptime').key
@@ -320,7 +324,8 @@ class fsButler(object):
                         if good[i]:
                             outputRecord = outputCat.addNew()
                             outputRecord.assign(record, scm)
-                            outputRecord.set(idKey, record.getId())
+                            if filterSuffix is not None:
+                                outputRecord.set(idKey, record.getId())
                             if withZeroMagFlux:
                                 outputRecord.set(zeroKey, fluxMag0)
                                 outputRecord.set(zeroErrKey, fluxMag0Err)
