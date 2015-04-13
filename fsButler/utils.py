@@ -37,6 +37,7 @@ _suffixablePatterns = ["flux.zeromag*",
                        "multId*"]
 
 _suffixRegex = re.compile(r'(_[grizy])$')
+_bandRegex = re.compile(r'(\.[grizy])$')
 
 _zeroMagField = afwTable.Field["F"]("flux.zeromag",
                                     "The flux corresponding to zero magnitude.")
@@ -79,6 +80,18 @@ def _suffixOrder(suffix):
     if suffix == '_y':
         return 5
 
+def _bandOrder(suffix):
+    if suffix == 'g':
+        return 1
+    if suffix == 'r':
+        return 2
+    if suffix == 'i':
+        return 3
+    if suffix == 'z':
+        return 4
+    if suffix == 'y':
+        return 5
+
 def getCatSuffixes(cat):
     suffixes = []
     for schemaItem in cat.getSchema():
@@ -91,6 +104,18 @@ def getCatSuffixes(cat):
     suffixes.sort(key=_suffixOrder)
     return suffixes
     
+def getCatBands(cat):
+    bands = []
+    for schemaItem in cat.getSchema():
+        fieldName = schemaItem.getField().getName()
+        match = _bandRegex.search(fieldName)
+        if match:
+            band = match.group(1)[-1]
+            if band not in bands:
+                bands.append(band) 
+    bands.sort(key=_bandOrder)
+    return bands
+
 def createSchemaMapper(cat, cat2=None, filterSuffix=None, withZeroMagFlux=False,
                        withStellar=False, withSeeing=False, withExptime=False):
 
@@ -314,10 +339,47 @@ def buildXY(hscCat, sgTable, matchRadius=1*afwGeom.arcseconds, includeMismatches
 
     return cat
 
+def getRecord(objId, fsButler, dataType='deepCoadd'):
+    info = utils.makeMapperInfo(fsButler.butler)
+    if 'Coadd' in dataType or 'coadd' in dataType:
+        dataId = info.splitCoaddId(objId)
+    else:
+        dataId = info.splitExposureId(objId)
+    dataId.pop('objId')
+    src = fsButler.butler.get(dataType+'_src', immediate=True, **dataId)
+    record = src[objId == src.get("id")][0]
+    return record
+
+def getParent(objId, fsButler, dataType='deepCoadd'):
+    record = getRecord(objId, fsButler, dataType='deepCoadd')
+    info = utils.makeMapperInfo(fsButler.butler)
+    parentId = record.getParent()
+    if parentId == 0:
+        print "This object has no parent"
+        return None
+    if 'Coadd' in dataType or 'coadd' in dataType:
+        dataId = info.splitCoaddId(parentId)
+    else:
+        dataId = info.splitExposureId(parentId)
+    dataId.pop('objId')
+    src = fsButler.butler.get(dataType+'_src', immediate=True, **dataId)
+    parent = src[objId == src.get("id")][0]
+    return parent
+
+def getMultId(cat):
+   bands = getCatBands(cat)
+   multIds = np.zeros((len(cat),), dtype=[(b, 'int64') for b in bands])
+   for b in bands:
+       multIds[b] = cat.get('multId.'+b)
+   return multIds
+
 def displayObject(objId, fsButler, dataType='deepCoadd', nPixel=15, frame=None):
     #TODO: Enable single exposure objects
     info = utils.makeMapperInfo(fsButler.butler)
-    dataId = info.splitCoaddId(objId)
+    if 'Coadd' in dataType or 'coadd' in dataType:
+        dataId = info.splitCoaddId(objId)
+    else:
+        dataId = info.splitExposureId(objId)
     dataId.pop('objId')
     src = fsButler.butler.get(dataType+'_src', immediate=True, **dataId)
     src = src[objId == src.get("id")][0]
