@@ -339,6 +339,24 @@ def buildXY(hscCat, sgTable, matchRadius=1*afwGeom.arcseconds, includeMismatches
 
     return cat
 
+def buildCatFromIds(objIds, fsButler, dataType='deepCoadd'):
+    info = utils.makeMapperInfo(fsButler.butler)
+    cat = None
+    for objId in objIds:
+        if 'Coadd' in dataType or 'coadd' in dataType:
+            dataId = info.splitCoaddId(objId)
+        else:
+            dataId = info.splitExposureId(objId)
+        dataId.pop('objId')
+        src = fsButler.butler.get(dataType+'_src', immediate=True, **dataId)
+        record = src[objId == src.get("id")][0]
+        if cat is None:
+            schema = record.getSchema()
+            cat = afwTable.SourceCatalog(schema)
+            cat.reserve(len(objIds))
+        cat.append(record)
+    return cat
+
 def getRecord(objId, fsButler, dataType='deepCoadd'):
     info = utils.makeMapperInfo(fsButler.butler)
     if 'Coadd' in dataType or 'coadd' in dataType:
