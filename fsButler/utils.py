@@ -373,7 +373,7 @@ def getMultId(cat):
        multIds[b] = cat.get('multId.'+b)
    return multIds
 
-def displayObject(objId, fsButler, dataType='deepCoadd', nPixel=15, frame=None):
+def displayObject(objId, fsButler, dataType='deepCoadd', suffix='', nPixel=15, frame=None):
     #TODO: Enable single exposure objects
     info = utils.makeMapperInfo(fsButler.butler)
     if 'Coadd' in dataType or 'coadd' in dataType:
@@ -384,7 +384,7 @@ def displayObject(objId, fsButler, dataType='deepCoadd', nPixel=15, frame=None):
     src = fsButler.butler.get(dataType+'_src', immediate=True, **dataId)
     src = src[objId == src.get("id")][0]
     coord = src.getCoord()
-    de = fsButler.butler.get(dataType, **dataId)
+    de = fsButler.butler.get(dataType+suffix, **dataId)
     pixel = de.getWcs().skyToPixel(coord)
     pixel = afwGeom.Point2I(pixel)
     bbox = afwGeom.Box2I(pixel, pixel)
