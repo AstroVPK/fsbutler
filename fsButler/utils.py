@@ -18,7 +18,6 @@ _fixedFields = ["id", "coord"]
 _fixedPatterns = []
 
 _suffixableFields = ["parent",
-                     "deblend.nchild",
                      "classification.extendedness",
                      "flags.pixel.bad",
                      #"flux.kron.radius",
@@ -28,7 +27,8 @@ _suffixableFields = ["parent",
                      "flags.pixel.saturated.any",
                      "flags.pixel.saturated.center"]
 
-_suffixablePatterns = ["flux.zeromag*",
+_suffixablePatterns = ["deblend*",
+                       "flux.zeromag*",
                        "flux.psf*",
                        "cmodel*",
                        "centroid*",
@@ -402,7 +402,7 @@ def displayObject(objId, fsButler, dataType='deepCoadd', suffix='', nPixel=15, f
     src = fsButler.butler.get(dataType+'_src', immediate=True, **dataId)
     src = src[objId == src.get("id")][0]
     coord = src.getCoord()
-    de = fsButler.butler.get(dataType+suffix, **dataId)
+    de = fsButler.butler.get(dataType, **dataId)
     pixel = de.getWcs().skyToPixel(coord)
     pixel = afwGeom.Point2I(pixel)
     bbox = afwGeom.Box2I(pixel, pixel)
