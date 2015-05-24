@@ -27,8 +27,9 @@ _suffixableFields = ["parent",
                      "flags.pixel.saturated.any",
                      "flags.pixel.saturated.center"]
 
-_suffixablePatterns = ["deblend*",
-                       "flux.zeromag*",
+_suffixablePatterns = ["flux.zeromag*",
+                       "multishapelet.psf*",
+                       "shape*",
                        "flux.psf*",
                        "cmodel*",
                        "centroid*",
@@ -225,7 +226,8 @@ def goodSources(cat):
     good = np.logical_and(good, cat.get("deblend.nchild") == 0)
     return good
 
-def strictMatch(cat1, cat2, matchRadius=1*afwGeom.arcseconds, includeMismatches=True):
+def strictMatch(cat1, cat2, matchRadius=1*afwGeom.arcseconds, includeMismatches=True,
+                multiMeas=False):
     """
     Match two catalogs using a one to one relation where each match is the closest
     object
@@ -233,6 +235,7 @@ def strictMatch(cat1, cat2, matchRadius=1*afwGeom.arcseconds, includeMismatches=
     
     mc = afwTable.MatchControl()
     mc.includeMismatches = includeMismatches
+    mc.findOnlyClosest = True
 
     #matched = afwTable.matchRaDec(cat1, cat2, matchRadius, True)
     matched = afwTable.matchRaDec(cat1, cat2, matchRadius, mc)
@@ -243,12 +246,16 @@ def strictMatch(cat1, cat2, matchRadius=1*afwGeom.arcseconds, includeMismatches=
         if m2 is None:
             noMatch.append(m1)
         else:
-            id = m2.getId()
-            if id not in bestMatches:
-                bestMatches[id] = (m1, m2, d)
-            else:
-                if d < bestMatches[id][2]:
+            if not multiMeas:
+                id = m2.getId()
+                if id not in bestMatches:
                     bestMatches[id] = (m1, m2, d)
+                else:
+                    if d < bestMatches[id][2]:
+                        bestMatches[id] = (m1, m2, d)
+            else:
+                id = m1.getId()
+                bestMatches[id] = (m1, m2, d)
 
     if includeMismatches:
         print "{0} objects from {1} in the first catalog had no match in the second catalog.".format(len(noMatch), len(cat1))
@@ -274,23 +281,30 @@ def strictMatch(cat1, cat2, matchRadius=1*afwGeom.arcseconds, includeMismatches=
             record.set(catKeys[i], m2.get(cat2Keys[i]))
     return cat
 
-def matchMultiBand(butler, dataType, filters=['HSC-G', 'HSC-R', 'HSC-I', 'HSC-Z', 'HSC-Y'], **kargs):
+def matchMultiBand(butler, dataType, filters=['HSC-G', 'HSC-R', 'HSC-I', 'HSC-Z', 'HSC-Y'],
+                   multiMeas=False, quick=False, **kargs):
     cats = []
     for f in filters:
-        cat = butler.fetchDataset(dataType, filterSuffix=f, filter=f, **kargs)
+        if quick:
+            ids = butler.fetchIds(dataType, filter=f)
+            cat = butler.fetchDataset(dataType, filterSuffix=f, **ids[0])
+        else:
+            cat = butler.fetchDataset(dataType, filterSuffix=f, filter=f, **kargs)
         cats.append(cat)
 
     matched = cats[0]
 
     for i in range(1, len(filters)):
-        matched = strictMatch(matched, cats[i])
+        matched = strictMatch(matched, cats[i], multiMeas=multiMeas)
     
     return matched
 
-def buildXY(hscCat, sgTable, matchRadius=1*afwGeom.arcseconds, includeMismatches=True):
+def buildXY(hscCat, sgTable, matchRadius=1*afwGeom.arcseconds, includeMismatches=True,
+            multiMeas=False):
 
     mc = afwTable.MatchControl()
     mc.includeMismatches = includeMismatches
+    mc.findOnlyClosest = True
 
     print "Matching with HST catalog"
     matchedSG = afwTable.matchRaDec(hscCat, sgTable, matchRadius, mc)
@@ -305,14 +319,20 @@ def buildXY(hscCat, sgTable, matchRadius=1*afwGeom.arcseconds, includeMismatches
         if m2 is None:
             noMatch.append(m1.getId())
         else:
-            id = m2.getId()
-            isStar = (m2.get(classKey) == 2)
-            magAuto = m2.get(magAutoKey)
-            if id not in stellar:
-                stellar[id] = [isStar, magAuto, d, m1]
+            if not multiMeas:
+                id = m2.getId()
+                isStar = (m2.get(classKey) == 2)
+                magAuto = m2.get(magAutoKey)
+                if id not in stellar:
+                    stellar[id] = [isStar, magAuto, d, m1]
+                else:
+                    if d < stellar[id][2]:
+                        stellar[id] = [isStar, magAuto, d, m1] # Only keep closest for now
             else:
-                if d < stellar[id][2]:
-                    stellar[id] = [isStar, magAuto, d, m1] # Only keep closest for now
+                id = m1.getId()
+                isStar = (m2.get(classKey) == 2)
+                magAuto = m2.get(magAutoKey)
+                stellar[id] = [isStar, magAuto, d, m1]
 
     if includeMismatches:
         print "{0} objects from {1} in the HSC catalog had no match in the HST catalog.".format(len(noMatch), len(hscCat))
