@@ -1,4 +1,4 @@
-setupRequired(hscPipe 3.3.3)
+setupRequired(hscPipe 3.6.1)
 setupRequired(ds9)
 
 envPrepend(PYTHONPATH, ${PRODUCT_DIR})
