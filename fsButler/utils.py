@@ -4,6 +4,7 @@ import numpy as np
 import lsst.afw.table as afwTable
 import lsst.afw.geom as afwGeom
 import lsst.afw.image as afwImage
+import lsst.afw.coord as afwCoord
 import lsst.analysis.utils as utils
 import lsst.afw.display.ds9 as ds9
 
@@ -475,3 +476,56 @@ def showCoaddInputs(objId, fsButler, coaddType="deepCoadd"):
         print  "%6s %3s %7.0f %5.2f %5s" % (v, ccd, exptime, sigma, weight)
     print "Total Exposure time {0}".format(totalExpTime)
     print "Coadd FWHM {0}".format(sigmaCoadd)
+
+def getCoaddCutOut(fsButler, ra, dec, nPixel=15, filter='HSC-R'):
+    """
+    Return a cutout centered at `ra` `dec` (equatiorial coordinates in radians) with a bounding
+    box size of nPixel x nPixel in filter `filter`. This function also returns a catalog of all
+    the records with centroids contained in the bounding box.
+    """
+
+    catSubImage = []
+
+    skyMap = fsButler.butler.get("deepCoadd_skyMap", immediate=True)
+    coord = afwCoord.IcrsCoord(afwGeom.Point2D(ra, dec), afwGeom.radians)
+
+    for tract, patch in skyMap.findClosestTractPatchList([coord]):
+        coadd = fsButler.butler.get("deepCoadd", tract=tract.getId(),
+                                    patch="%d,%d" % patch[0].getIndex(),
+                                    filter=filter, immediate=True)
+        pixel = afwGeom.Point2I(coadd.getWcs().skyToPixel(coord))
+        bbox = afwGeom.Box2I(pixel, pixel)
+        bbox.grow(nPixel)
+        bbox.clip(coadd.getBBox(afwImage.PARENT))
+        if bbox.isEmpty():
+            continue
+        origin = afwGeom.Extent2D(bbox.getMin())
+        subImage = afwImage.ExposureF(coadd, bbox, afwImage.PARENT)
+        cat = fsButler.butler.get("deepCoadd_src", tract=tract.getId(),
+                                  patch="%d,%d" % patch[0].getIndex(),
+                                  filter=filter, immediate=True)
+        for record in cat:
+            centroid = afwGeom.PointI(record.getCentroid())
+            if bbox.contains(centroid):
+                catSubImage.append(record)
+
+    return subImage, origin, catSubImage
+
+def displayCutout(subImage, origin=None, catSubImage=None, frame=0):
+    """
+    Display a subImage. If catSubImage is not None then the centroids of the records in the catalog
+    are also displayed, this catalog is meant to be the catalog of records in the subImage's
+    bounding box.
+    """
+
+    ds9.mtv(subImage, frame=frame)
+
+    if origin is not None and catSubImage is not None:
+        for s in catSubImage:
+            centroid = s.getCentroid() - origin
+            if s.get('deblend.nchild') == 0:
+                ds9.dot('+', centroid[0], centroid[1], ctype=ds9.GREEN, frame=frame)
+            else:
+                ds9.dot('+', centroid[0], centroid[1], ctype=ds9.RED, frame=frame)
+            if s.getParent() == 0:
+                ds9.dot('o', centroid[0], centroid[1], ctype=ds9.CYAN, frame=frame)
