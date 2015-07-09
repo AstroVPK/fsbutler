@@ -1,3 +1,4 @@
+setupRequired(ipdb)
 setupRequired(hscPipe 3.6.1)
 setupRequired(ds9)
 
