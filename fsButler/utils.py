@@ -8,6 +8,8 @@ import lsst.afw.coord as afwCoord
 import lsst.analysis.utils as utils
 import lsst.afw.display.ds9 as ds9
 
+from lsst.pex.exceptions import LsstCppException
+
 """
 Utility functions to process data elements delivered by fsButler
 """
@@ -299,6 +301,176 @@ def matchMultiBand(butler, dataType, filters=['HSC-G', 'HSC-R', 'HSC-I', 'HSC-Z'
         matched = strictMatch(matched, cats[i], multiMeas=multiMeas)
     
     return matched
+
+def matchCats(cat1, cat2, matchRadius=1*afwGeom.arcseconds, includeMismatches=False,
+              multiMeas=False, suffix='.2'):
+    """
+    Match to catalogs and return a catalog with the fields of the two catalogs
+    """
+
+    mc = afwTable.MatchControl()
+    mc.includeMismatches = includeMismatches
+    mc.findOnlyClosest = True
+
+    matched = afwTable.matchRaDec(cat1, cat2, matchRadius, mc)
+
+    haveCentroid = {}
+    for m1, m2, d in matched:
+        haveCentroid[m1.getId()] = (m1, m2, d)
+
+    bestMatches = {}
+    if includeMismatches:
+        noMatch = []
+    for m1, m2, d in matched:
+        if m2 is None:
+            noMatch.append(m1)
+        else:
+            if not multiMeas:
+                id = m2.getId()
+                if id not in bestMatches:
+                    bestMatches[id] = (m1, m2, d)
+                else:
+                    if d < bestMatches[id][2]:
+                        bestMatches[id] = (m1, m2, d)
+            else:
+                id = m1.getId()
+                bestMatches[id] = (m1, m2, d)
+
+    if includeMismatches:
+        print "{0} objects from {1} in the first catalog had no match in the second catalog.".format(len(noMatch), len(cat1))
+        print "{0} objects from the first catalog with a match in the second catalog were not the closest match.".format(len(matched) - len(noMatch) - len(bestMatches))
+
+    if includeMismatches and not multiMeas:
+        nMatches = len(cat1)
+        print "I found {0} matches".format(len(bestMatches))
+    else:
+        nMatches = len(bestMatches)
+        print "I found {0} matches".format(nMatches)
+
+    schema1 = cat1.getSchema(); schema2 = cat2.getSchema()
+    names1 = cat1.schema.getNames(); names2 = cat2.schema.getNames()
+
+    schema = afwTable.SimpleTable.makeMinimalSchema()
+
+    catKeys = []; cat1Keys = []; cat2Keys = []
+    for name in names1:
+        cat1Keys.append(schema1.find(name).getKey())
+        if name not in ['id', 'coord']:
+            catKeys.append(schema.addField(schema1.find(name).getField()))
+        else:
+            catKeys.append(schema.find(name).getKey())
+    for name in names2:
+        cat2Keys.append(schema2.find(name).getKey())
+        if name not in schema1.getNames():
+            catKeys.append(schema.addField(schema2.find(name).getField()))
+        else:
+            catKeys.append(schema.addField(schema2.find(name).getField().copyRenamed(name+suffix)))
+
+    cat = afwTable.SimpleCatalog(schema)
+    cat.reserve(nMatches)
+
+    if includeMismatches and not multiMeas:
+        for m1 in cat1:
+            id1 = m1.getId()
+            record = cat.addNew()
+            for i in range(len(cat1Keys)):
+                record.set(catKeys[i], m1.get(cat1Keys[i]))
+            if id1 in haveCentroid:
+                m2 = haveCentroid[id1][1]
+                if m2 is not None:
+                    id2 = m2.getId()
+                    if id2 in bestMatches:
+                        if bestMatches[id2][0] == m1:
+                            for i in range(len(cat1Keys), len(catKeys)):
+                                record.set(catKeys[i], m2.get(cat2Keys[i-len(cat1Keys)]))
+    else:
+        for id in bestMatches:
+            m1, m2, d = bestMatches[id]
+            record = cat.addNew()
+            for i in range(len(cat1Keys)):
+                record.set(catKeys[i], m1.get(cat1Keys[i]))
+            for i in range(len(cat1Keys), len(catKeys)):
+                record.set(catKeys[i], m2.get(cat2Keys[i-len(cat1Keys)]))
+
+    return cat
+
+def buildPermissiveXY(butler, dataType, filters=['HSC-G', 'HSC-R', 'HSC-I', 'HSC-Z', 'HSC-Y'],
+                      multiMeas=False, quick=False,
+                      selectSG="/tigress/garmilla/data/cosmos_sg_all.fits",
+                      matchRadius=1*afwGeom.arcseconds, **kargs):
+
+    patch = None
+
+    sgTable = afwTable.SimpleCatalog.readFits(selectSG)
+    sgTable["coord.ra"][:]  = np.radians(sgTable["coord.ra"])
+    sgTable["coord.dec"][:] = np.radians(sgTable["coord.dec"])
+    if quick:
+        indexes = np.random.choice(len(sgTable), 10000, replace=False)
+        quickCat = afwTable.SimpleCatalog(sgTable.getSchema())
+        quickCat.reserve(10000)
+        for i in indexes:
+            record = quickCat.addNew()
+            record.assign(sgTable[i])
+        sgTable = quickCat
+    matches = []; idKeys = []
+
+    for f in filters:
+        if quick:
+            if patch is None:
+                ids = butler.fetchIds(dataType, filter=f)
+                patch = ids[0]['patch']
+            cat = butler.fetchDataset(dataType, filterSuffix=f, filter=f, patch=patch, **kargs)
+        else:
+            cat = butler.fetchDataset(dataType, filterSuffix=f, filter=f, **kargs)
+
+        suffix = _getFilterSuffix(f)
+        match = matchCats(sgTable, cat, matchRadius=matchRadius, multiMeas=False,
+                          includeMismatches=True, suffix=suffix)
+        matches.append(match)
+        idKeys.append(match.schema.find('id').getKey())
+
+    nMatches = len(sgTable)
+
+    outputSchema = afwTable.SimpleTable.makeMinimalSchema()
+    outputSchema.addField(sgTable.schema.find('mag.auto').getField())
+    outputSchema.addField(sgTable.schema.find('mu.class').getField())
+
+    schema = afwTable.SimpleTable.makeMinimalSchema()
+
+    for match in matches:
+        schema = match.getSchema()
+        names = schema.getNames()
+        for name in names:
+            if name not in ['id', 'coord', 'mag.auto', 'mu.class']:
+                outputSchema.addField(schema.find(name).getField())
+
+    outputCat = afwTable.SimpleCatalog(outputSchema)
+    outputCat.reserve(nMatches)
+    for i in range(nMatches):
+        outputCat.addNew()
+
+    outputCat.get('id')[:] = sgTable.get('id')
+    outputCat.get('coord.ra')[:] = sgTable.get('coord.ra')
+    outputCat.get('coord.dec')[:] = sgTable.get('coord.dec')
+    for match in matches:
+        schema = match.getSchema()
+        names = schema.getNames()
+        for name in names:
+            if name not in ['id', 'coord']:
+                try:
+                    outputCat.get(name)[:] = match.get(name)
+                except LsstCppException:
+                    keyOut = outputCat.schema.find(name).getKey()
+                    keyMatch = match.schema.find(name).getKey()
+                    for i in range(nMatches):
+                        outputCat[i].set(keyOut, match[i].get(keyMatch))
+                except ValueError:
+                    keyOut = outputCat.schema.find(name).getKey()
+                    keyMatch = match.schema.find(name).getKey()
+                    for i in range(nMatches):
+                        outputCat[i].set(keyOut, match[i].get(keyMatch))
+
+    return outputCat
 
 def buildXY(hscCat, sgTable, matchRadius=1*afwGeom.arcseconds, includeMismatches=True,
             multiMeas=False):
