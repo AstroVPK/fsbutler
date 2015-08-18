@@ -1,5 +1,5 @@
 setupRequired(ipdb)
-setupRequired(hscPipe 3.6.1)
+setupRequired(hscPipe 3.8.5)
 setupRequired(ds9)
 
 envPrepend(PYTHONPATH, ${PRODUCT_DIR})
