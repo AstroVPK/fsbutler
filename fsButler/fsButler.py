@@ -254,7 +254,7 @@ class fsButler(object):
 
     def fetchDataset(self, dataType='src', flags=None, immediate=True, withZeroMagFlux=True,
                      filterSuffix=None, scm=None, withSeeing=True, seeingAtPos=False, 
-                     withExptime=True, **dataId):
+                     withExptime=True, withDGaussPsf=False, **dataId):
         """
         Returns the union of all the data elements of type `dataType` that match the id `dataId`
     
@@ -276,6 +276,7 @@ class fsButler(object):
                      the seeing at the average position of the patch (in the case of coadds) or
                      ccd (in the case of single exposures).
         withExptime: If true add a column for the exposure time.
+        withDGaussPSF: If true carry out a double Gaussian fit to the PSF and store the parameters.
         """
     
         dataIds = self.getIds(self.dataRoot, dataType, **dataId)
@@ -284,9 +285,15 @@ class fsButler(object):
             suffix = utils._getFilterSuffix(filterSuffix)
 
         dataset = []
+        if withDGaussPsf:
+            cfg = self.butler.get("multiband_config", immediate=True)
+            ctrl = cfg.measureCoaddSources.measurement.algorithms["multishapelet.psf"].makeControl()
         for id in dataIds:
             if self.butler.datasetExists(dataType, **id):
-                dataElement = self.butler.get(dataType, flags=flags, immediate=immediate, **id)
+                if flags is not None:
+                    dataElement = self.butler.get(dataType, flags=flags, immediate=immediate, **id)
+                else:
+                    dataElement = self.butler.get(dataType, immediate=immediate, **id)
                 if withZeroMagFlux or withSeeing or withExptime:
                     fluxMag0, fluxMag0Err, psf, exptime = self._getCalibData(dataType, **id)
                     # Compute seeing at average position
@@ -296,7 +303,8 @@ class fsButler(object):
                         scm = utils.createSchemaMapper(dataElement, filterSuffix=filterSuffix,
                                                        withZeroMagFlux=withZeroMagFlux,
                                                        withSeeing=withSeeing,
-                                                       withExptime=withExptime)
+                                                       withExptime=withExptime,
+                                                       withDGaussPsf=withDGaussPsf)
                     outputSchema = scm.getOutputSchema()
                     outputCat = afwTable.SimpleCatalog(outputSchema)
                     good = utils.goodSources(dataElement)
@@ -320,6 +328,23 @@ class fsButler(object):
                             exptimeKey = outputSchema.find('exptime'+suffix).key
                         else:
                             exptimeKey = outputSchema.find('exptime').key
+                    if withDGaussPsf:
+                        if filterSuffix is not None:
+                            dGaussRadInnerKey = outputSchema.find('dGauss.radInner'+suffix).key
+                            dGaussRadOuterKey = outputSchema.find('dGauss.radOuter'+suffix).key
+                            dGaussAmpRatKey = outputSchema.find('dGauss.ampRat'+suffix).key
+                            dGaussQInnerKey = outputSchema.find('dGauss.qInner'+suffix).key
+                            dGaussQOuterKey = outputSchema.find('dGauss.qOuter'+suffix).key
+                            dGaussThetaInnerKey = outputSchema.find('dGauss.thetaInner'+suffix).key
+                            dGaussThetaOuterKey = outputSchema.find('dGauss.thetaOuter'+suffix).key
+                        else:
+                            dGaussRadInnerKey = outputSchema.find('dGauss.radInner').key
+                            dGaussRadOuterKey = outputSchema.find('dGauss.radOuter').key
+                            dGaussAmpRatKey = outputSchema.find('dGauss.ampRat').key
+                            dGaussQInnerKey = outputSchema.find('dGauss.qInner').key
+                            dGaussQOuterKey = outputSchema.find('dGauss.qOuter').key
+                            dGaussThetaInnerKey = outputSchema.find('dGauss.thetaInner').key
+                            dGaussThetaOuterKey = outputSchema.find('dGauss.thetaOuter').key
                     for i, record in enumerate(dataElement):
                         if good[i]:
                             outputRecord = outputCat.addNew()
@@ -341,6 +366,16 @@ class fsButler(object):
                                 outputRecord.set(seeingKey, seeing)
                             if withExptime:
                                 outputRecord.set(exptimeKey, exptime)
+                            if withDGaussPsf:
+                                radInner, radOuter, ampRat, qInner, qOuter, thetaInner, thetaOuter\
+                                = utils.extractDoubleGaussianModel(ctrl, record)
+                                outputRecord.set(dGaussRadInnerKey, radInner)
+                                outputRecord.set(dGaussRadOuterKey, radOuter)
+                                outputRecord.set(dGaussAmpRatKey, ampRat)
+                                outputRecord.set(dGaussQInnerKey, qInner)
+                                outputRecord.set(dGaussQOuterKey, qOuter)
+                                outputRecord.set(dGaussThetaInnerKey, thetaInner)
+                                outputRecord.set(dGaussThetaOuterKey, thetaOuter)
                     dataset.append(outputCat)
                 else:
                     dataset.append(dataElement)

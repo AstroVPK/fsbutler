@@ -9,6 +9,7 @@ import lsst.analysis.utils as utils
 import lsst.afw.display.ds9 as ds9
 
 from lsst.pex.exceptions import LsstCppException
+from lsst.meas.extensions.multiShapelet import FitPsfModel
 
 """
 Utility functions to process data elements delivered by fsButler
@@ -38,7 +39,14 @@ _suffixablePatterns = ["flux.zeromag*",
                        "centroid*",
                        "seeing*",
                        "exptime*",
-                       "multId*"]
+                       "multId*",
+                       "dGauss.radInner*",
+                       "dGauss.radOuter*",
+                       "dGauss.ampRat*",
+                       "dGauss.qInner*",
+                       "dGauss.qOuter*",
+                       "dGauss.thetaInner*",
+                       "dGauss.thetaOuter*"]
 
 _suffixRegex = re.compile(r'(_[grizy])$')
 _bandRegex = re.compile(r'(\.[grizy])$')
@@ -57,6 +65,21 @@ _exptimeField = afwTable.Field["F"]("exptime",
                                     "Exposure time.")
 _idField = afwTable.Field["L"]("multId",
                                "Multiple id, this field is in place to keep track of the ids of the matches in other catalogs/bands")
+_dGaussRadInner = afwTable.Field["F"]("dGauss.radInner",
+                                      "Determinant radius of the inner Gaussian in the double Gaussian fit to the PSF.")
+_dGaussRadOuter = afwTable.Field["F"]("dGauss.radOuter",
+                                      "Determinant radius of the outer Gaussian in the double Gaussian fit to the PSF.")
+_dGaussAmpRat = afwTable.Field["F"]("dGauss.ampRat",
+                                    "Peak amplitudes ratio of the two Gaussians in the double Gaussian fit to the PSF.")
+_dGaussQInner = afwTable.Field["F"]("dGauss.qInner",
+                                    "Ellipticity of the inner Gaussian in the double Gaussian fit to the PSF.")
+_dGaussQOuter = afwTable.Field["F"]("dGauss.qOuter",
+                                    "Ellipticity of the outer Gaussian in the double Gaussian fit to the PSF.")
+_dGaussThetaInner = afwTable.Field["F"]("dGauss.thetaInner",
+                                        "Inclination angle of the inner Gaussian in the double Gaussian fit to the PSF.")
+_dGaussThetaOuter = afwTable.Field["F"]("dGauss.thetaOuter",
+                                        "Inclination angle of the outer Gaussians in the double Gaussian fit to the PSF.")
+
 
 def _getFilterSuffix(filterSuffix):
     if filterSuffix == 'HSC-G':
@@ -121,7 +144,7 @@ def getCatBands(cat):
     return bands
 
 def createSchemaMapper(cat, cat2=None, filterSuffix=None, withZeroMagFlux=False,
-                       withStellar=False, withSeeing=False, withExptime=False):
+                       withStellar=False, withSeeing=False, withExptime=False, withDGaussPsf=False):
 
     if cat2 is not None and filterSuffix:
         raise ValueError("Can't use filterSuffix for two catalogs")
@@ -214,6 +237,34 @@ def createSchemaMapper(cat, cat2=None, filterSuffix=None, withZeroMagFlux=False,
     if withStellar:
         scm.addOutputField(_stellarField)
         scm.addOutputField(_magAutoField)
+
+    if withDGaussPsf:
+        if filterSuffix:
+            scm.addOutputField(_dGaussRadInner.copyRenamed("dGauss.radInner"+suffix))
+            scm.addOutputField(_dGaussRadOuter.copyRenamed("dGauss.radOuter"+suffix))
+            scm.addOutputField(_dGaussAmpRat.copyRenamed("dGauss.ampRat"+suffix))
+            scm.addOutputField(_dGaussQInner.copyRenamed("dGauss.qInner"+suffix))
+            scm.addOutputField(_dGaussQOuter.copyRenamed("dGauss.qOuter"+suffix))
+            scm.addOutputField(_dGaussThetaInner.copyRenamed("dGauss.thetaInner"+suffix))
+            scm.addOutputField(_dGaussThetaOuter.copyRenamed("dGauss.thetaOuter"+suffix))
+        else:
+            if len(suffixes) == 0:
+                scm.addOutputField(_dGaussRadInner)
+                scm.addOutputField(_dGaussRadOuter)
+                scm.addOutputField(_dGaussAmpRat)
+                scm.addOutputField(_dGaussQInner)
+                scm.addOutputField(_dGaussQOuter)
+                scm.addOutputField(_dGaussThetaInner)
+                scm.addOutputField(_dGaussThetaOuter)
+            else:
+                for s in suffixes:
+                    scm.addOutputField(_dGaussRadInner.copyRenamed("dGauss.radInner"+s))
+                    scm.addOutputField(_dGaussRadOuter.copyRenamed("dGauss.radOuter"+s))
+                    scm.addOutputField(_dGaussAmpRat.copyRenamed("dGauss.ampRat"+s))
+                    scm.addOutputField(_dGaussQInner.copyRenamed("dGauss.qInner"+s))
+                    scm.addOutputField(_dGaussQOuter.copyRenamed("dGauss.qOuter"+s))
+                    scm.addOutputField(_dGaussThetaInner.copyRenamed("dGauss.thetaInner"+s))
+                    scm.addOutputField(_dGaussThetaOuter.copyRenamed("dGauss.thetaOuter"+s))
 
     return scm
 
@@ -583,6 +634,22 @@ def getMultId(cat):
    for b in bands:
        multIds[b] = cat.get('multId.'+b)
    return multIds
+
+def extractDoubleGaussianModel(ctrl, record):
+    model = FitPsfModel(ctrl, record)
+    shapelets = model.asMultiShapelet(record.getCentroid())
+    shapelet1 = shapelets.getElements()[0]
+    shapelet2 = shapelets.getElements()[1]
+    ampRat = shapelet2.evaluate()(record.getCentroid())/shapelet1.evaluate()(record.getCentroid())
+    ellipse1 = afwGeom.ellipses.SeparableConformalShearDeterminantRadius(shapelet1.getEllipse().getCore())
+    ellipse2 = afwGeom.ellipses.SeparableConformalShearDeterminantRadius(shapelet2.getEllipse().getCore())
+    radInner = ellipse1.getRadius().getValue()
+    radOuter = ellipse2.getRadius().getValue()
+    qInner = ellipse1.getEllipticity().getAxisRatio()
+    qOuter = ellipse2.getEllipticity().getAxisRatio()
+    thetaInner = ellipse1.getEllipticity().getTheta()
+    thetaOuter = ellipse2.getEllipticity().getTheta()
+    return radInner, radOuter, ampRat, qInner, qOuter, thetaInner, thetaOuter
 
 def displayObject(objId, fsButler, dataType='deepCoadd', suffix='', nPixel=15, frame=None):
     #TODO: Enable single exposure objects
