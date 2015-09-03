@@ -35,6 +35,7 @@ _suffixablePatterns = ["flux.zeromag*",
                        "multishapelet.psf*",
                        "shape*",
                        "flux.psf*",
+                       "flux.kron*",
                        "cmodel*",
                        "centroid*",
                        "seeing*",
@@ -582,6 +583,44 @@ def buildXY(hscCat, sgTable, matchRadius=1*afwGeom.arcseconds, includeMismatches
         return cat, noMatch
 
     return cat
+
+def getNoMatchCat(butler, dataType, filters=['HSC-G', 'HSC-R', 'HSC-I', 'HSC-Z', 'HSC-Y'],
+                  quick=False, selectSG="/tigress/garmilla/data/cosmos_sg_all.fits",
+                  matchRadius=1*afwGeom.arcseconds, mode='hsc', **kargs):
+
+    mc = afwTable.MatchControl()
+    mc.includeMismatches = True
+    mc.findOnlyClosest = True
+
+    sgTable = afwTable.SimpleCatalog.readFits(selectSG)
+    sgTable["coord.ra"][:]  = np.radians(sgTable["coord.ra"])
+    sgTable["coord.dec"][:] = np.radians(sgTable["coord.dec"])
+
+    outputCats = []
+    for f in filters:
+        cat = butler.fetchDataset(dataType, filterSuffix=f, filter=f, **kargs)
+        if mode == 'hsc':
+            schema = cat.getSchema()
+        elif mode == 'hst':
+            schema = sgTable.getSchema()
+        outputCat = afwTable.SimpleCatalog(schema)
+        scm = afwTable.SchemaMapper(schema)
+        suffix = _getFilterSuffix(f)
+        if mode == 'hsc':
+            matched = afwTable.matchRaDec(cat, sgTable, matchRadius, mc)
+        elif mode == 'hst':
+            matched = afwTable.matchRaDec(sgTable, cat, matchRadius, mc)
+        for m1, m2, d in matched:
+            if m2 is None:
+                record = outputCat.addNew()
+                record.assign(m1, scm)
+        outputCats.append(outputCat)
+
+    result = outputCats[0]
+    for i in range(1, len(outputCats)):
+        result.extend(outputCats[i], deep=False)
+
+    return result
 
 def buildCatFromIds(objIds, fsButler, dataType='deepCoadd'):
     info = utils.makeMapperInfo(fsButler.butler)
