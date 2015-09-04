@@ -24,7 +24,6 @@ _fixedPatterns = []
 _suffixableFields = ["parent",
                      "classification.extendedness",
                      "flags.pixel.bad",
-                     #"flux.kron.radius",
                      "flags.pixel.edge",
                      "flags.pixel.interpolated.any",
                      "flags.pixel.interpolated.center",
@@ -32,6 +31,7 @@ _suffixableFields = ["parent",
                      "flags.pixel.saturated.center"]
 
 _suffixablePatterns = ["flux.zeromag*",
+                       "merge*",
                        "multishapelet.psf*",
                        "shape*",
                        "flux.psf*",

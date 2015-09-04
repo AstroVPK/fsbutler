@@ -168,7 +168,7 @@ class fsButler(object):
         if dataType == 'src' or dataType == 'calexp_md':
             dataIds = fsButler.singleExpIds(dataRoot, **dataId)
         elif dataType == 'deepCoadd' or dataType == 'deepCoadd_src' or\
-             dataType == 'deepCoadd_calexp_md' or dataType == 'deepCoadd_ref':
+             dataType == 'deepCoadd_calexp_md' or dataType == 'deepCoadd_meas':
             dataIds = fsButler.deepCoaddIds(dataRoot, **dataId)
         else:
             raise ValueError("Data type {0} is not implemented".format(dataType))
@@ -194,7 +194,7 @@ class fsButler(object):
     def _getCalexpType(dataType):
         if dataType == 'src':
             return 'calexp'
-        elif dataType == 'deepCoadd_src' or dataType == 'deepCoadd_ref':
+        elif dataType == 'deepCoadd_src' or dataType == 'deepCoadd_meas':
             return 'deepCoadd_calexp_md'
         elif dataType == 'calexp_md' or dataType == 'deepCoadd_calexp_md':
             return dataType
@@ -243,6 +243,8 @@ class fsButler(object):
                 calib = calexp.getCalib()
         else:
             calexpType = dataType[:-4]
+            if calexpType[-1] == '_':
+                calexpType = calexpType[:-1]
             calexp = self.butler.get(calexpType, **id)
             calib = calexp.getCalib()
         psf = calexp.getPsf()
