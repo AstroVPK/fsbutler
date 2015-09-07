@@ -255,9 +255,9 @@ class fsButler(object):
             exptime = calib.getExptime()
         return fluxMag0, fluxMag0Err, psf, exptime
 
-    def fetchDataset(self, dataType='src', flags=None, immediate=True, withZeroMagFlux=True,
-                     filterSuffix=None, scm=None, withSeeing=True, seeingAtPos=False, 
-                     withExptime=True, withDGaussPsf=False, **dataId):
+    def fetchDataset(self, dataType='src', flags=afwTable.SOURCE_IO_NO_FOOTPRINTS, immediate=True,
+                     withZeroMagFlux=True, filterSuffix=None, scm=None, withSeeing=True,
+                     seeingAtPos=False, withExptime=True, withDGaussPsf=False, **dataId):
         """
         Returns the union of all the data elements of type `dataType` that match the id `dataId`
     

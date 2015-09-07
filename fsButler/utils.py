@@ -585,7 +585,7 @@ def buildXY(hscCat, sgTable, matchRadius=1*afwGeom.arcseconds, includeMismatches
     return cat
 
 def getNoMatchCat(butler, dataType, filters=['HSC-G', 'HSC-R', 'HSC-I', 'HSC-Z', 'HSC-Y'],
-                  quick=False, selectSG="/tigress/garmilla/data/cosmos_sg_all.fits",
+                  selectSG="/tigress/garmilla/data/cosmos_sg_all.fits",
                   matchRadius=1*afwGeom.arcseconds, mode='hsc', **kargs):
 
     mc = afwTable.MatchControl()
