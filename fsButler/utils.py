@@ -1,5 +1,6 @@
 import re
 import numpy as np
+import matplotlib.pyplot as plt
 
 import lsst.afw.table as afwTable
 import lsst.afw.geom as afwGeom
@@ -604,7 +605,6 @@ def getNoMatchCat(butler, dataType, filters=['HSC-G', 'HSC-R', 'HSC-I', 'HSC-Z',
         elif mode == 'hst':
             schema = sgTable.getSchema()
         outputCat = afwTable.SimpleCatalog(schema)
-        scm = afwTable.SchemaMapper(schema)
         suffix = _getFilterSuffix(f)
         if mode == 'hsc':
             matched = afwTable.matchRaDec(cat, sgTable, matchRadius, mc)
@@ -613,7 +613,7 @@ def getNoMatchCat(butler, dataType, filters=['HSC-G', 'HSC-R', 'HSC-I', 'HSC-Z',
         for m1, m2, d in matched:
             if m2 is None:
                 record = outputCat.addNew()
-                record.assign(m1, scm)
+                record.assign(m1)
         outputCats.append(outputCat)
 
     result = outputCats[0]
@@ -621,6 +621,56 @@ def getNoMatchCat(butler, dataType, filters=['HSC-G', 'HSC-R', 'HSC-I', 'HSC-Z',
         result.extend(outputCats[i], deep=False)
 
     return result
+
+def genMagCountsPlot(catHst, catHsc, catHscNoMatch, nBins=50, fontSize=18):
+    #catHst = afwTable.SimpleCatalog.readFits('/tigress/garmilla/data/pMatchDeepCoaddMeas-128620150721GRIZY.fits')
+    #catHsc = afwTable.SimpleCatalog.readFits('/tigress/garmilla/data/hsc-128620150721I.fits')
+    #catHscNoMatch = afwTable.SimpleCatalog.readFits('/tigress/garmilla/data/noHstMatch-128620150721I.fits')
+    magHst = catHst.get('mag.auto')
+    hstNoMatch = catHst.get('multId.i') == 0
+    magHstNoMatch = magHst[hstNoMatch]
+    magHstMatch = magHst[np.logical_not(hstNoMatch)]
+    magHst = magHst[np.isfinite(magHst)]
+    print "There are {0} objects in the HST catalog".format(len(magHst))
+    magHstNoMatch = magHstNoMatch[np.isfinite(magHstNoMatch)]
+    print "There are {0} objects in the HST catalog without HSC match".format(len(magHstNoMatch))
+    magHstMatch = magHstMatch[np.isfinite(magHstMatch)]
+    print "There are {0} objects in the HST catalog with HSC match".format(len(magHstMatch))
+    magHsc = -2.5*np.log10(catHsc.get('cmodel.flux.i')/catHsc.get('flux.zeromag.i'))
+    magHscNoMatch = -2.5*np.log10(catHscNoMatch.get('cmodel.flux.i')/catHscNoMatch.get('flux.zeromag.i'))
+    magHscMatch = -2.5*np.log10(catHst.get('cmodel.flux.i')/catHst.get('flux.zeromag.i'))
+    magHscMatch = magHscMatch[np.logical_not(hstNoMatch)]
+    magHsc = magHsc[np.isfinite(magHsc)]
+    print "There are {0} objects in the HSC catalog".format(len(magHsc))
+    magHscNoMatch = magHscNoMatch[np.isfinite(magHscNoMatch)]
+    print "There are {0} objects in the HSC catalog without HST match".format(len(magHscNoMatch))
+    magHscMatch = magHscMatch[np.isfinite(magHscMatch)]
+    print "There are {0} objects in the HSC catalog without HST match".format(len(magHscMatch))
+
+    bins = np.linspace(17.0, 34.0, num=nBins+1)
+
+    fig = plt.figure()
+    axHst = fig.add_subplot(1, 2, 1)
+    axHst.set_xlabel('MAG_AUTO F814W', fontsize=fontSize)
+    axHst.set_ylabel('Counts', fontsize=fontSize)
+    axHst.hist(magHst, bins=bins, histtype='step', color='black', label='HST All')
+    axHst.hist(magHstNoMatch, bins=bins, histtype='step', color='black', linestyle='dashed', label='HST with no HSC Match')
+    axHst.hist(magHstMatch, bins=bins, histtype='step', color='black', linestyle='dotted', label='HST with HSC Match')
+    axHst.legend(loc='upper left', fontsize=18)
+    axHsc = fig.add_subplot(1, 2, 2)
+    axHsc.set_xlabel('Magnitude CModel HSC-I', fontsize=fontSize)
+    axHsc.set_ylabel('Counts', fontsize=fontSize)
+    axHsc.hist(magHsc, bins=bins, histtype='step', color='black', label='HSC All')
+    axHsc.hist(magHscNoMatch, bins=bins, histtype='step', color='black', linestyle='dashed', label='HSC with no HST Match')
+    axHsc.hist(magHscMatch, bins=bins, histtype='step', color='black', linestyle='dotted', label='HSC with HST Match')
+    axHsc.legend(loc='upper left', fontsize=fontSize)
+    for ax in [axHst, axHsc]:
+        for tick in ax.xaxis.get_major_ticks():
+            tick.label.set_fontsize(fontSize)
+        for tick in ax.yaxis.get_major_ticks():
+            tick.label.set_fontsize(fontSize)
+
+    return fig
 
 def buildCatFromIds(objIds, fsButler, dataType='deepCoadd'):
     info = utils.makeMapperInfo(fsButler.butler)
