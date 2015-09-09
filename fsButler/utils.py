@@ -450,13 +450,14 @@ def matchCats(cat1, cat2, matchRadius=1*afwGeom.arcseconds, includeMismatches=Fa
 def buildPermissiveXY(butler, dataType, filters=['HSC-G', 'HSC-R', 'HSC-I', 'HSC-Z', 'HSC-Y'],
                       multiMeas=False, quick=False,
                       selectSG="/tigress/garmilla/data/cosmos_sg_all.fits",
-                      matchRadius=1*afwGeom.arcseconds, **kargs):
+                      matchRadius=1*afwGeom.arcseconds, inDegrees=True, **kargs):
 
     patch = None
 
     sgTable = afwTable.SimpleCatalog.readFits(selectSG)
-    sgTable["coord.ra"][:]  = np.radians(sgTable["coord.ra"])
-    sgTable["coord.dec"][:] = np.radians(sgTable["coord.dec"])
+    if inDegrees:
+        sgTable["coord.ra"][:]  = np.radians(sgTable["coord.ra"])
+        sgTable["coord.dec"][:] = np.radians(sgTable["coord.dec"])
     if quick:
         indexes = np.random.choice(len(sgTable), 10000, replace=False)
         quickCat = afwTable.SimpleCatalog(sgTable.getSchema())
