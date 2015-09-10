@@ -379,15 +379,15 @@ def matchCats(cat1, cat2, matchRadius=1*afwGeom.arcseconds, includeMismatches=Fa
             noMatch.append(m1)
         else:
             if not multiMeas:
-                id = m2.getId()
-                if id not in bestMatches:
-                    bestMatches[id] = (m1, m2, d)
+                id2 = m2.getId()
+                if id2 not in bestMatches:
+                    bestMatches[id2] = (m1, m2, d)
                 else:
-                    if d < bestMatches[id][2]:
-                        bestMatches[id] = (m1, m2, d)
+                    if d < bestMatches[id2][2]:
+                        bestMatches[id2] = (m1, m2, d)
             else:
-                id = m1.getId()
-                bestMatches[id] = (m1, m2, d)
+                id1 = m1.getId()
+                bestMatches[id1] = (m1, m2, d)
 
     if includeMismatches:
         print "{0} objects from {1} in the first catalog had no match in the second catalog.".format(len(noMatch), len(cat1))
@@ -436,6 +436,8 @@ def matchCats(cat1, cat2, matchRadius=1*afwGeom.arcseconds, includeMismatches=Fa
                         if bestMatches[id2][0] == m1:
                             for i in range(len(cat1Keys), len(catKeys)):
                                 record.set(catKeys[i], m2.get(cat2Keys[i-len(cat1Keys)]))
+                    else:
+                        raise RunTimeError("If an object in the second catalog has a match it has to be in bestMatches")
     else:
         for id in bestMatches:
             m1, m2, d = bestMatches[id]
@@ -473,6 +475,7 @@ def buildPermissiveXY(butler, dataType, filters=['HSC-G', 'HSC-R', 'HSC-I', 'HSC
             if patch is None:
                 ids = butler.fetchIds(dataType, filter=f)
                 patch = ids[0]['patch']
+                print "We are running in quick mode, I'll only look at patch {0}".format(patch)
             cat = butler.fetchDataset(dataType, filterSuffix=f, filter=f, patch=patch, **kargs)
         else:
             cat = butler.fetchDataset(dataType, filterSuffix=f, filter=f, **kargs)
