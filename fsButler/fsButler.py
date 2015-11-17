@@ -4,6 +4,7 @@ import numpy as np
 import lsst.afw.image as afwImage
 import lsst.afw.table as afwTable
 import lsst.afw.geom as afwGeom
+from lsst.pex.exceptions import LsstCppException
 
 from . import utils
 
@@ -245,8 +246,14 @@ class fsButler(object):
             calexpType = dataType[:-4]
             if calexpType[-1] == '_':
                 calexpType = calexpType[:-1]
-            calexp = self.butler.get(calexpType, **id)
-            calib = calexp.getCalib()
+            try:
+                calexp = self.butler.get(calexpType, **id)
+                calib = calexp.getCalib()
+            except LsstCppException:
+                fName = 'calexp-{0}-{1}-{2}.fits'.format(id['filter'], id['tract'], id['patch'])
+                fName = os.path.join(self.dataRoot, 'deepCoadd', id['filter'], str(id['tract']), id['patch'], fName)
+                calexp = afwImage.ExposureF(fName)
+                calib = calexp.getCalib()
         psf = calexp.getPsf()
         fluxMag0, fluxMag0Err = calib.getFluxMag0()
         if 'deepCoadd' in dataType:
