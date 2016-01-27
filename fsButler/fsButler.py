@@ -195,11 +195,11 @@ class fsButler(object):
     def _getCalexpType(dataType):
         if dataType == 'src':
             return 'calexp'
-        elif dataType == 'deepCoadd_src' or dataType == 'deepCoadd_meas':
-            return 'deepCoadd_calexp_md'
+        elif dataType == 'deepCoadd_src' or dataType == 'deepCoadd_meas' or dataType == 'deepCoadd':
+            return 'deepCoadd_calexp'
         elif dataType == 'calexp_md' or dataType == 'deepCoadd_calexp_md':
             return dataType
-        elif dataType == 'calexp' or dataType == 'deepCoadd':
+        elif dataType == 'calexp':
             return dataType
         else:
             raise ValueError("Unkown dataType")
@@ -246,14 +246,14 @@ class fsButler(object):
             calexpType = dataType[:-4]
             if calexpType[-1] == '_':
                 calexpType = calexpType[:-1]
-            try:
-                calexp = self.butler.get(calexpType, **id)
-                calib = calexp.getCalib()
-            except LsstCppException:
-                fName = 'calexp-{0}-{1}-{2}.fits'.format(id['filter'], id['tract'], id['patch'])
-                fName = os.path.join(self.dataRoot, 'deepCoadd', id['filter'], str(id['tract']), id['patch'], fName)
-                calexp = afwImage.ExposureF(fName)
-                calib = calexp.getCalib()
+            #try:
+            calexp = self.butler.get(calexpType, **id)
+            calib = calexp.getCalib()
+            #except LsstCppException:
+            #    fName = 'calexp-{0}-{1}-{2}.fits'.format(id['filter'], id['tract'], id['patch'])
+            #    fName = os.path.join(self.dataRoot, 'deepCoadd', id['filter'], str(id['tract']), id['patch'], fName)
+            #    calexp = afwImage.ExposureF(fName)
+            #    calib = calexp.getCalib()
         psf = calexp.getPsf()
         fluxMag0, fluxMag0Err = calib.getFluxMag0()
         if 'deepCoadd' in dataType:
