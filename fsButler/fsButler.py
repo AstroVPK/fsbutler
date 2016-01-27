@@ -262,6 +262,21 @@ class fsButler(object):
             exptime = calib.getExptime()
         return fluxMag0, fluxMag0Err, psf, exptime
 
+    def get(self, dataType, **kargs):
+        fileName = self.butler.get(dataType + '_filename', **kargs)[0]
+        if os.path.isfile(fileName):
+            return self.butler.get(*args, **kargs)
+        else:
+            fileName += '.gz'
+            if dataType == 'deepCoadd_meas':
+                if 'flags' in kargs:
+                    flags = kargs['flags']
+                    return afwTable.SourceCatalog.readFits(fileName, 0, flags)
+                else:
+                    return afwTable.SourceCatalog.readFits(fileName)
+            else:
+                raise ValueError('Data type {0} is not implemented'.format(dataType))
+
     def fetchDataset(self, dataType='src', flags=afwTable.SOURCE_IO_NO_FOOTPRINTS, immediate=True,
                      withZeroMagFlux=True, filterSuffix=None, scm=None, withSeeing=True,
                      seeingAtPos=False, withExptime=True, withDGaussPsf=False, **dataId):
