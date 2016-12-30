@@ -1,4 +1,6 @@
 setupRequired(ipdb)
 setupRequired(hscPipe 4.0.0)
+setupRequired(daf_butlerUtils -r ~rhl/LSST/daf/butlerUtils -j)
+setupRequired(-r /tigress/garmilla/LSST/analysis -j)
 
 envPrepend(PYTHONPATH, ${PRODUCT_DIR})

@@ -166,7 +166,7 @@ class fsButler(object):
                 element.
         """
 
-        if dataType == 'src' or dataType == 'calexp_md':
+        if dataType == 'src' or dataType == 'calexp_md' or dataType == 'calexp':
             dataIds = fsButler.singleExpIds(dataRoot, **dataId)
         elif dataType == 'deepCoadd' or dataType == 'deepCoadd_src' or\
              dataType == 'deepCoadd_calexp_md' or dataType == 'deepCoadd_meas':
@@ -274,6 +274,8 @@ class fsButler(object):
                     return afwTable.SourceCatalog.readFits(fileName, 0, flags)
                 else:
                     return afwTable.SourceCatalog.readFits(fileName)
+            elif dataType in ['calexp', 'calexp_sub', 'deepCoadd_calexp']:
+                return afwImage.ExposureD.readFits(fileName)
             else:
                 raise ValueError('Data type {0} is not implemented'.format(dataType))
 
