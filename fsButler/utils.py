@@ -1,3 +1,4 @@
+from __future__ import print_function
 import re
 import numpy as np
 import matplotlib.pyplot as plt
@@ -9,14 +10,13 @@ import lsst.afw.coord as afwCoord
 import lsst.analysis.utils as utils
 import lsst.afw.display.ds9 as ds9
 
-from lsst.pex.exceptions import LsstCppException
-from lsst.meas.extensions.multiShapelet import FitPsfModel
+from lsst.pex.exceptions import Exception as LsstCppException
 
 """
 Utility functions to process data elements delivered by fsButler
 """
 
-#TODO: Make these configurable options
+# TODO: Make these configurable options
 
 _fixedFields = ["id", "coord"]
 
@@ -35,9 +35,9 @@ _suffixablePatterns = ["flux.*",
                        "merge*",
                        "multishapelet.psf*",
                        "shape*",
-                       #"flux.psf*",
-                       #"flux.kron*",
-                       #"flux.naive*",
+                       # "flux.psf*",
+                       # "flux.kron*",
+                       # "flux.naive*",
                        "cmodel*",
                        "centroid*",
                        "seeing*",
@@ -59,29 +59,38 @@ _zeroMagField = afwTable.Field["F"]("flux.zeromag",
 _zeroMagErrField = afwTable.Field["F"]("flux.zeromag.err",
                                        "The flux error corresponding to zero magnitude.")
 _stellarField = afwTable.Field["Flag"]("stellar",
-                                       "If true, the object is known to be a star if false it's known not to be a star.")
+                                       "If true, the object is known to be a star if false it's known not to "
+                                       "be a star.")
 _magAutoField = afwTable.Field["F"]("mag.auto",
                                     "The magnitude computed by SExtractor in the HST catalog.")
 _seeingField = afwTable.Field["F"]("seeing",
-                                    "The PSF FWHM.")
+                                   "The PSF FWHM.")
 _exptimeField = afwTable.Field["F"]("exptime",
                                     "Exposure time.")
 _idField = afwTable.Field["L"]("multId",
-                               "Multiple id, this field is in place to keep track of the ids of the matches in other catalogs/bands")
+                               "Multiple id, this field is in place to keep track of the ids of the matches "
+                               "in other catalogs/bands")
 _dGaussRadInner = afwTable.Field["F"]("dGauss.radInner",
-                                      "Determinant radius of the inner Gaussian in the double Gaussian fit to the PSF.")
+                                      "Determinant radius of the inner Gaussian in the double Gaussian fit "
+                                      "to the PSF.")
 _dGaussRadOuter = afwTable.Field["F"]("dGauss.radOuter",
-                                      "Determinant radius of the outer Gaussian in the double Gaussian fit to the PSF.")
+                                      "Determinant radius of the outer Gaussian in the double Gaussian fit "
+                                      "to the PSF.")
 _dGaussAmpRat = afwTable.Field["F"]("dGauss.ampRat",
-                                    "Peak amplitudes ratio of the two Gaussians in the double Gaussian fit to the PSF.")
+                                    "Peak amplitudes ratio of the two Gaussians in the double Gaussian fit "
+                                    "to the PSF.")
 _dGaussQInner = afwTable.Field["F"]("dGauss.qInner",
-                                    "Ellipticity of the inner Gaussian in the double Gaussian fit to the PSF.")
+                                    "Ellipticity of the inner Gaussian in the double Gaussian fit to the "
+                                    "PSF.")
 _dGaussQOuter = afwTable.Field["F"]("dGauss.qOuter",
-                                    "Ellipticity of the outer Gaussian in the double Gaussian fit to the PSF.")
+                                    "Ellipticity of the outer Gaussian in the double Gaussian fit to the "
+                                    "PSF.")
 _dGaussThetaInner = afwTable.Field["F"]("dGauss.thetaInner",
-                                        "Inclination angle of the inner Gaussian in the double Gaussian fit to the PSF.")
+                                        "Inclination angle of the inner Gaussian in the double Gaussian fit "
+                                        "to the PSF.")
 _dGaussThetaOuter = afwTable.Field["F"]("dGauss.thetaOuter",
-                                        "Inclination angle of the outer Gaussians in the double Gaussian fit to the PSF.")
+                                        "Inclination angle of the outer Gaussians in the double Gaussian fit"
+                                        "to the PSF.")
 
 
 def _getFilterSuffix(filterSuffix):
@@ -98,6 +107,7 @@ def _getFilterSuffix(filterSuffix):
     else:
         return filterSuffix
 
+
 def _suffixOrder(suffix):
     if suffix == '_g':
         return 1
@@ -109,6 +119,7 @@ def _suffixOrder(suffix):
         return 4
     if suffix == '_y':
         return 5
+
 
 def _bandOrder(suffix):
     if suffix == 'g':
@@ -122,6 +133,7 @@ def _bandOrder(suffix):
     if suffix == 'y':
         return 5
 
+
 def getCatSuffixes(cat):
     suffixes = []
     for schemaItem in cat.getSchema():
@@ -130,10 +142,11 @@ def getCatSuffixes(cat):
         if match:
             suffix = match.group(1)
             if suffix not in suffixes:
-                suffixes.append(suffix) 
+                suffixes.append(suffix)
     suffixes.sort(key=_suffixOrder)
     return suffixes
-    
+
+
 def getCatBands(cat):
     bands = []
     for schemaItem in cat.getSchema():
@@ -142,9 +155,10 @@ def getCatBands(cat):
         if match:
             band = match.group(1)[-1]
             if band not in bands:
-                bands.append(band) 
+                bands.append(band)
     bands.sort(key=_bandOrder)
     return bands
+
 
 def createSchemaMapper(cat, cat2=None, filterSuffix=None, withZeroMagFlux=False,
                        withStellar=False, withSeeing=False, withExptime=False, withDGaussPsf=False):
@@ -160,7 +174,7 @@ def createSchemaMapper(cat, cat2=None, filterSuffix=None, withZeroMagFlux=False,
     scm = afwTable.SchemaMapper(schema)
 
     # First fixed fields and patterns
-    for f in _fixedFields: 
+    for f in _fixedFields:
         scm.addMapping(schema.find(f).getKey())
     for p in _fixedPatterns:
         for f in schema.extract(p):
@@ -271,17 +285,19 @@ def createSchemaMapper(cat, cat2=None, filterSuffix=None, withZeroMagFlux=False,
 
     return scm
 
+
 def goodSources(cat):
     # Get the list of sources with bad flags
     bad = reduce(lambda x, y: np.logical_or(x, cat.get(y)),
                  ["flags.pixel.edge",
                   "flags.pixel.bad",
                   "flags.pixel.saturated.center"],
-                  False)
+                 False)
     good = np.logical_not(bad)
     # Get rid of objects that have children, i.e. the deblender thinks it's a set of objects
     good = np.logical_and(good, cat.get("deblend.nchild") == 0)
     return good
+
 
 def strictMatch(cat1, cat2, matchRadius=1*afwGeom.arcseconds, includeMismatches=True,
                 multiMeas=False):
@@ -289,12 +305,12 @@ def strictMatch(cat1, cat2, matchRadius=1*afwGeom.arcseconds, includeMismatches=
     Match two catalogs using a one to one relation where each match is the closest
     object
     """
-    
+
     mc = afwTable.MatchControl()
     mc.includeMismatches = includeMismatches
     mc.findOnlyClosest = True
 
-    #matched = afwTable.matchRaDec(cat1, cat2, matchRadius, True)
+    # matched = afwTable.matchRaDec(cat1, cat2, matchRadius, True)
     matched = afwTable.matchRaDec(cat1, cat2, matchRadius, mc)
 
     bestMatches = {}
@@ -315,14 +331,18 @@ def strictMatch(cat1, cat2, matchRadius=1*afwGeom.arcseconds, includeMismatches=
                 bestMatches[id] = (m1, m2, d)
 
     if includeMismatches:
-        print "{0} objects from {1} in the first catalog had no match in the second catalog.".format(len(noMatch), len(cat1))
-        print "{0} objects from the first catalog with a match in the second catalog were not the closest match.".format(len(matched) - len(noMatch) - len(bestMatches))
+        print("{0} objects from {1} in the first catalog had no match in the second "
+              "catalog.".format(len(noMatch), len(cat1)))
+        print("{0} objects from the first catalog with a match in the second catalog "
+              "were not the closest match.".format(len(matched) - len(noMatch) - len(bestMatches)))
 
     scm = createSchemaMapper(cat1, cat2)
     schema = scm.getOutputSchema()
     cat = afwTable.SimpleCatalog(schema)
     cat.reserve(len(bestMatches))
-    cat2Fields = []; cat2Keys = []; catKeys = []
+    cat2Fields = []
+    cat2Keys = []
+    catKeys = []
     schema2 = cat2.getSchema()
     suffixes = getCatSuffixes(cat2)
     for suffix in suffixes:
@@ -337,6 +357,7 @@ def strictMatch(cat1, cat2, matchRadius=1*afwGeom.arcseconds, includeMismatches=
         for i in range(len(cat2Keys)):
             record.set(catKeys[i], m2.get(cat2Keys[i]))
     return cat
+
 
 def matchMultiBand(butler, dataType, filters=['HSC-G', 'HSC-R', 'HSC-I', 'HSC-Z', 'HSC-Y'],
                    multiMeas=False, quick=False, **kargs):
@@ -353,11 +374,12 @@ def matchMultiBand(butler, dataType, filters=['HSC-G', 'HSC-R', 'HSC-I', 'HSC-Z'
 
     for i in range(1, len(filters)):
         matched = strictMatch(matched, cats[i], multiMeas=multiMeas)
-    
+
     return matched
 
+
 def matchCats(cat1, cat2, matchRadius=1*afwGeom.arcseconds, includeMismatches=False,
-              multiMeas=False, suffix='.2'):
+              multiMeas=False, suffix='2'):
     """
     Match to catalogs and return a catalog with the fields of the two catalogs
     """
@@ -391,25 +413,31 @@ def matchCats(cat1, cat2, matchRadius=1*afwGeom.arcseconds, includeMismatches=Fa
                 bestMatches[id1] = (m1, m2, d)
 
     if includeMismatches:
-        print "{0} objects from {1} in the first catalog had no match in the second catalog.".format(len(noMatch), len(cat1))
-        print "{0} objects from the first catalog with a match in the second catalog were not the closest match.".format(len(matched) - len(noMatch) - len(bestMatches))
+        print("{0} objects from {1} in the first catalog had no match in the second "
+              "catalog.".format(len(noMatch), len(cat1)))
+        print("{0} objects from the first catalog with a match in the second catalog "
+              "were not the closest match.".format(len(matched) - len(noMatch) - len(bestMatches)))
 
     if includeMismatches and not multiMeas:
         nMatches = len(cat1)
-        print "I found {0} matches".format(len(bestMatches))
+        print("I found {0} matches".format(len(bestMatches)))
     else:
         nMatches = len(bestMatches)
-        print "I found {0} matches".format(nMatches)
+        print("I found {0} matches".format(nMatches))
 
-    schema1 = cat1.getSchema(); schema2 = cat2.getSchema()
-    names1 = cat1.schema.getNames(); names2 = cat2.schema.getNames()
+    schema1 = cat1.getSchema()
+    schema2 = cat2.getSchema()
+    names1 = cat1.schema.getNames()
+    names2 = cat2.schema.getNames()
 
     schema = afwTable.SimpleTable.makeMinimalSchema()
-
-    catKeys = []; cat1Keys = []; cat2Keys = []
+    catKeys = []
+    cat1Keys = []
+    cat2Keys = []
     for name in names1:
         cat1Keys.append(schema1.find(name).getKey())
-        if name not in ['id', 'coord']:
+        # if name not in ['id', 'coord']:
+        if name not in ['id', 'coord_ra', 'coord_dec']:
             catKeys.append(schema.addField(schema1.find(name).getField()))
         else:
             catKeys.append(schema.find(name).getKey())
@@ -418,7 +446,11 @@ def matchCats(cat1, cat2, matchRadius=1*afwGeom.arcseconds, includeMismatches=Fa
         if name not in schema1.getNames():
             catKeys.append(schema.addField(schema2.find(name).getField()))
         else:
-            catKeys.append(schema.addField(schema2.find(name).getField().copyRenamed(name+suffix)))
+            if name == 'id':
+                catKeys.append(schema.addField(schema2.find(name).getField().copyRenamed(name + suffix)))
+            else:
+                newname = schema.join(name.split('_')[0] + suffix, name.split('_')[1])
+                catKeys.append(schema.addField(schema2.find(name).getField().copyRenamed(newname)))
 
     cat = afwTable.SimpleCatalog(schema)
     cat.reserve(nMatches)
@@ -438,7 +470,8 @@ def matchCats(cat1, cat2, matchRadius=1*afwGeom.arcseconds, includeMismatches=Fa
                             for i in range(len(cat1Keys), len(catKeys)):
                                 record.set(catKeys[i], m2.get(cat2Keys[i-len(cat1Keys)]))
                     else:
-                        raise RunTimeError("If an object in the second catalog has a match it has to be in bestMatches")
+                        raise RunTimeError("If an object in the second catalog has a match it has to be in "
+                                           "bestMatches")
     else:
         for id in bestMatches:
             m1, m2, d = bestMatches[id]
@@ -450,6 +483,7 @@ def matchCats(cat1, cat2, matchRadius=1*afwGeom.arcseconds, includeMismatches=Fa
 
     return cat
 
+
 def buildPermissiveXY(butler, dataType, filters=['HSC-G', 'HSC-R', 'HSC-I', 'HSC-Z', 'HSC-Y'],
                       multiMeas=False, quick=False,
                       selectSG="/tigress/garmilla/data/cosmos_sg_all.fits",
@@ -459,7 +493,7 @@ def buildPermissiveXY(butler, dataType, filters=['HSC-G', 'HSC-R', 'HSC-I', 'HSC
 
     sgTable = afwTable.SimpleCatalog.readFits(selectSG)
     if inDegrees:
-        sgTable["coord.ra"][:]  = np.radians(sgTable["coord.ra"])
+        sgTable["coord.ra"][:] = np.radians(sgTable["coord.ra"])
         sgTable["coord.dec"][:] = np.radians(sgTable["coord.dec"])
     if quick:
         indexes = np.random.choice(len(sgTable), 10000, replace=False)
@@ -469,14 +503,15 @@ def buildPermissiveXY(butler, dataType, filters=['HSC-G', 'HSC-R', 'HSC-I', 'HSC
             record = quickCat.addNew()
             record.assign(sgTable[i])
         sgTable = quickCat
-    matches = []; idKeys = []
+    matches = []
+    idKeys = []
 
     for f in filters:
         if quick:
             if patch is None:
                 ids = butler.fetchIds(dataType, filter=f)
                 patch = ids[0]['patch']
-                print "We are running in quick mode, I'll only look at patch {0}".format(patch)
+                print("We are running in quick mode, I'll only look at patch {0}".format(patch))
             cat = butler.fetchDataset(dataType, filterSuffix=f, filter=f, patch=patch, **kargs)
         else:
             cat = butler.fetchDataset(dataType, filterSuffix=f, filter=f, **kargs)
@@ -530,6 +565,7 @@ def buildPermissiveXY(butler, dataType, filters=['HSC-G', 'HSC-R', 'HSC-I', 'HSC
 
     return outputCat
 
+
 def buildXY(hscCat, sgTable, matchRadius=1*afwGeom.arcseconds, includeMismatches=True,
             multiMeas=False):
 
@@ -537,10 +573,10 @@ def buildXY(hscCat, sgTable, matchRadius=1*afwGeom.arcseconds, includeMismatches
     mc.includeMismatches = includeMismatches
     mc.findOnlyClosest = True
 
-    print "Matching with HST catalog"
+    print("Matching with HST catalog")
     matchedSG = afwTable.matchRaDec(hscCat, sgTable, matchRadius, mc)
-    print "Found {0} matches with HST objects".format(len(matchedSG))
-    
+    print("Found {0} matches with HST objects".format(len(matchedSG)))
+
     # Build truth table
     stellar = {}
     classKey = sgTable.getSchema().find('mu.class').key
@@ -558,7 +594,7 @@ def buildXY(hscCat, sgTable, matchRadius=1*afwGeom.arcseconds, includeMismatches
                     stellar[id] = [isStar, magAuto, d, m1]
                 else:
                     if d < stellar[id][2]:
-                        stellar[id] = [isStar, magAuto, d, m1] # Only keep closest for now
+                        stellar[id] = [isStar, magAuto, d, m1]  # Only keep closest for now
             else:
                 id = m1.getId()
                 isStar = (m2.get(classKey) == 2)
@@ -566,10 +602,12 @@ def buildXY(hscCat, sgTable, matchRadius=1*afwGeom.arcseconds, includeMismatches
                 stellar[id] = [isStar, magAuto, d, m1]
 
     if includeMismatches:
-        print "{0} objects from {1} in the HSC catalog had no match in the HST catalog.".format(len(noMatch), len(hscCat))
-        print "{0} objects from the HSC catalog with a match in the HST catalog were not the closest match.".format(len(matchedSG) - len(noMatch) - len(stellar))
+        print("{0} objects from {1} in the HSC catalog had no match in the HST catalog.".format(len(noMatch),
+                                                                                                len(hscCat)))
+        print("{0} objects from the HSC catalog with a match in the HST catalog were not the closest "
+              "match.".format(len(matchedSG) - len(noMatch) - len(stellar)))
 
-    print "Of which I picked {0}".format(len(stellar)) 
+    print("Of which I picked {0}".format(len(stellar)))
 
     scm = createSchemaMapper(hscCat, withStellar=True)
     schema = scm.getOutputSchema()
@@ -590,6 +628,7 @@ def buildXY(hscCat, sgTable, matchRadius=1*afwGeom.arcseconds, includeMismatches
 
     return cat
 
+
 def getNoMatchCat(butler, dataType, filters=['HSC-G', 'HSC-R', 'HSC-I', 'HSC-Z', 'HSC-Y'],
                   selectSG="/tigress/garmilla/data/cosmos_sg_all.fits",
                   matchRadius=1*afwGeom.arcseconds, mode='hsc', **kargs):
@@ -599,7 +638,7 @@ def getNoMatchCat(butler, dataType, filters=['HSC-G', 'HSC-R', 'HSC-I', 'HSC-Z',
     mc.findOnlyClosest = True
 
     sgTable = afwTable.SimpleCatalog.readFits(selectSG)
-    sgTable["coord.ra"][:]  = np.radians(sgTable["coord.ra"])
+    sgTable["coord.ra"][:] = np.radians(sgTable["coord.ra"])
     sgTable["coord.dec"][:] = np.radians(sgTable["coord.dec"])
 
     outputCats = []
@@ -627,30 +666,32 @@ def getNoMatchCat(butler, dataType, filters=['HSC-G', 'HSC-R', 'HSC-I', 'HSC-Z',
 
     return result
 
+
 def genMagCountsPlot(catHst, catHsc, catHscNoMatch, nBins=50, fontSize=18):
-    #catHst = afwTable.SimpleCatalog.readFits('/tigress/garmilla/data/pMatchDeepCoaddMeas-128620150721GRIZY.fits')
-    #catHsc = afwTable.SimpleCatalog.readFits('/tigress/garmilla/data/hsc-128620150721I.fits')
-    #catHscNoMatch = afwTable.SimpleCatalog.readFits('/tigress/garmilla/data/noHstMatch-128620150721I.fits')
+    # catHst = afwTable.SimpleCatalog.readFits('/tigress/garmilla/data/
+    # pMatchDeepCoaddMeas-128620150721GRIZY.fits')
+    # catHsc = afwTable.SimpleCatalog.readFits('/tigress/garmilla/data/hsc-128620150721I.fits')
+    # catHscNoMatch = afwTable.SimpleCatalog.readFits('/tigress/garmilla/data/noHstMatch-128620150721I.fits')
     magHst = catHst.get('mag.auto')
     hstNoMatch = catHst.get('multId.i') == 0
     magHstNoMatch = magHst[hstNoMatch]
     magHstMatch = magHst[np.logical_not(hstNoMatch)]
     magHst = magHst[np.isfinite(magHst)]
-    print "There are {0} objects in the HST catalog".format(len(magHst))
+    print("There are {0} objects in the HST catalog".format(len(magHst)))
     magHstNoMatch = magHstNoMatch[np.isfinite(magHstNoMatch)]
-    print "There are {0} objects in the HST catalog without HSC match".format(len(magHstNoMatch))
+    print("There are {0} objects in the HST catalog without HSC match".format(len(magHstNoMatch)))
     magHstMatch = magHstMatch[np.isfinite(magHstMatch)]
-    print "There are {0} objects in the HST catalog with HSC match".format(len(magHstMatch))
+    print("There are {0} objects in the HST catalog with HSC match".format(len(magHstMatch)))
     magHsc = -2.5*np.log10(catHsc.get('cmodel.flux.i')/catHsc.get('flux.zeromag.i'))
     magHscNoMatch = -2.5*np.log10(catHscNoMatch.get('cmodel.flux.i')/catHscNoMatch.get('flux.zeromag.i'))
     magHscMatch = -2.5*np.log10(catHst.get('cmodel.flux.i')/catHst.get('flux.zeromag.i'))
     magHscMatch = magHscMatch[np.logical_not(hstNoMatch)]
     magHsc = magHsc[np.isfinite(magHsc)]
-    print "There are {0} objects in the HSC catalog".format(len(magHsc))
+    print("There are {0} objects in the HSC catalog".format(len(magHsc)))
     magHscNoMatch = magHscNoMatch[np.isfinite(magHscNoMatch)]
-    print "There are {0} objects in the HSC catalog without HST match".format(len(magHscNoMatch))
+    print("There are {0} objects in the HSC catalog without HST match".format(len(magHscNoMatch)))
     magHscMatch = magHscMatch[np.isfinite(magHscMatch)]
-    print "There are {0} objects in the HSC catalog without HST match".format(len(magHscMatch))
+    print("There are {0} objects in the HSC catalog without HST match".format(len(magHscMatch)))
 
     bins = np.linspace(17.0, 34.0, num=nBins+1)
 
@@ -659,15 +700,19 @@ def genMagCountsPlot(catHst, catHsc, catHscNoMatch, nBins=50, fontSize=18):
     axHst.set_xlabel('MAG_AUTO F814W', fontsize=fontSize)
     axHst.set_ylabel('Counts', fontsize=fontSize)
     axHst.hist(magHst, bins=bins, histtype='step', color='black', label='HST All')
-    axHst.hist(magHstNoMatch, bins=bins, histtype='step', color='black', linestyle='dashed', label='HST with no HSC Match')
-    axHst.hist(magHstMatch, bins=bins, histtype='step', color='black', linestyle='dotted', label='HST with HSC Match')
+    axHst.hist(magHstNoMatch, bins=bins, histtype='step', color='black', linestyle='dashed',
+               label='HST with no HSC Match')
+    axHst.hist(magHstMatch, bins=bins, histtype='step', color='black', linestyle='dotted',
+               label='HST with HSC Match')
     axHst.legend(loc='upper left', fontsize=18)
     axHsc = fig.add_subplot(1, 2, 2)
     axHsc.set_xlabel('Magnitude CModel HSC-I', fontsize=fontSize)
     axHsc.set_ylabel('Counts', fontsize=fontSize)
     axHsc.hist(magHsc, bins=bins, histtype='step', color='black', label='HSC All')
-    axHsc.hist(magHscNoMatch, bins=bins, histtype='step', color='black', linestyle='dashed', label='HSC with no HST Match')
-    axHsc.hist(magHscMatch, bins=bins, histtype='step', color='black', linestyle='dotted', label='HSC with HST Match')
+    axHsc.hist(magHscNoMatch, bins=bins, histtype='step', color='black', linestyle='dashed',
+               label='HSC with no HST Match')
+    axHsc.hist(magHscMatch, bins=bins, histtype='step', color='black', linestyle='dotted',
+               label='HSC with HST Match')
     axHsc.legend(loc='upper left', fontsize=fontSize)
     for ax in [axHst, axHsc]:
         for tick in ax.xaxis.get_major_ticks():
@@ -676,6 +721,7 @@ def genMagCountsPlot(catHst, catHsc, catHscNoMatch, nBins=50, fontSize=18):
             tick.label.set_fontsize(fontSize)
 
     return fig
+
 
 def buildCatFromIds(objIds, fsButler, dataType='deepCoadd'):
     info = utils.makeMapperInfo(fsButler.butler)
@@ -695,6 +741,7 @@ def buildCatFromIds(objIds, fsButler, dataType='deepCoadd'):
         cat.append(record)
     return cat
 
+
 def getRecord(objId, fsButler, dataType='deepCoadd'):
     info = utils.makeMapperInfo(fsButler.butler)
     if 'Coadd' in dataType or 'coadd' in dataType:
@@ -706,12 +753,13 @@ def getRecord(objId, fsButler, dataType='deepCoadd'):
     record = src[objId == src.get("id")][0]
     return record
 
+
 def getParent(objId, fsButler, dataType='deepCoadd'):
     record = getRecord(objId, fsButler, dataType='deepCoadd')
     info = utils.makeMapperInfo(fsButler.butler)
     parentId = record.getParent()
     if parentId == 0:
-        print "This object has no parent"
+        print("This object has no parent")
         return None
     if 'Coadd' in dataType or 'coadd' in dataType:
         dataId = info.splitCoaddId(parentId)
@@ -722,31 +770,17 @@ def getParent(objId, fsButler, dataType='deepCoadd'):
     parent = src[objId == src.get("id")][0]
     return parent
 
-def getMultId(cat):
-   bands = getCatBands(cat)
-   multIds = np.zeros((len(cat),), dtype=[(b, 'int64') for b in bands])
-   for b in bands:
-       multIds[b] = cat.get('multId.'+b)
-   return multIds
 
-def extractDoubleGaussianModel(ctrl, record):
-    model = FitPsfModel(ctrl, record)
-    shapelets = model.asMultiShapelet(record.getCentroid())
-    shapelet1 = shapelets.getElements()[0]
-    shapelet2 = shapelets.getElements()[1]
-    ampRat = shapelet2.evaluate()(record.getCentroid())/shapelet1.evaluate()(record.getCentroid())
-    ellipse1 = afwGeom.ellipses.SeparableConformalShearDeterminantRadius(shapelet1.getEllipse().getCore())
-    ellipse2 = afwGeom.ellipses.SeparableConformalShearDeterminantRadius(shapelet2.getEllipse().getCore())
-    radInner = ellipse1.getRadius().getValue()
-    radOuter = ellipse2.getRadius().getValue()
-    qInner = ellipse1.getEllipticity().getAxisRatio()
-    qOuter = ellipse2.getEllipticity().getAxisRatio()
-    thetaInner = ellipse1.getEllipticity().getTheta()
-    thetaOuter = ellipse2.getEllipticity().getTheta()
-    return radInner, radOuter, ampRat, qInner, qOuter, thetaInner, thetaOuter
+def getMultId(cat):
+    bands = getCatBands(cat)
+    multIds = np.zeros((len(cat),), dtype=[(b, 'int64') for b in bands])
+    for b in bands:
+        multIds[b] = cat.get('multId.'+b)
+    return multIds
+
 
 def displayObject(objId, fsButler, dataType='deepCoadd', suffix='', nPixel=15, frame=None):
-    #TODO: Enable single exposure objects
+    # TODO: Enable single exposure objects
     info = utils.makeMapperInfo(fsButler.butler)
     if 'Coadd' in dataType or 'coadd' in dataType:
         dataId = info.splitCoaddId(objId)
@@ -764,6 +798,7 @@ def displayObject(objId, fsButler, dataType='deepCoadd', suffix='', nPixel=15, f
     im = afwImage.ExposureF(de, bbox, afwImage.PARENT)
     ds9.mtv(im, frame=frame)
     return im
+
 
 def showCoaddInputs(objId, fsButler, coaddType="deepCoadd"):
     """Show the inputs for the specified object Id, optionally at the specified position
@@ -784,7 +819,7 @@ def showCoaddInputs(objId, fsButler, coaddType="deepCoadd"):
     psf = coadd.getPsf()
     sigmaCoadd = psf.computeShape(pos).getDeterminantRadius()
 
-    print "%6s %3s %7s %5s %5s" % ("visit", "ccd", "exptime", "FWHM", "weight")
+    print("%6s %3s %7s %5s %5s" % ("visit", "ccd", "exptime", "FWHM", "weight"))
 
     totalExpTime = 0.0
     expTimeVisits = set()
@@ -795,8 +830,9 @@ def showCoaddInputs(objId, fsButler, coaddType="deepCoadd"):
         v = input.get("visit")
         bbox = input.getBBox()
         # It's quicker to not read all the pixels, so just read 1
-        calexp = fsButler.butler.get("calexp_sub", bbox=afwGeom.BoxI(afwGeom.PointI(0, 0), afwGeom.ExtentI(1, 1)),
-                            visit=int(v), ccd=ccd)
+        calexp = fsButler.butler.get("calexp_sub",
+                                     bbox=afwGeom.BoxI(afwGeom.PointI(0, 0), afwGeom.ExtentI(1, 1)),
+                                     visit=int(v), ccd=ccd)
         calib = calexp.getCalib()
         psf = calexp.getPsf()
         pos = calexp.getWcs().skyToPixel(posSky)
@@ -806,9 +842,10 @@ def showCoaddInputs(objId, fsButler, coaddType="deepCoadd"):
         if v not in expTimeVisits:
             totalExpTime += exptime
             expTimeVisits.add(v)
-        print  "%6s %3s %7.0f %5.2f %5s" % (v, ccd, exptime, sigma, weight)
-    print "Total Exposure time {0}".format(totalExpTime)
-    print "Coadd FWHM {0}".format(sigmaCoadd)
+        print("%6s %3s %7.0f %5.2f %5s" % (v, ccd, exptime, sigma, weight))
+    print("Total Exposure time {0}".format(totalExpTime))
+    print("Coadd FWHM {0}".format(sigmaCoadd))
+
 
 def getCoaddCutOut(fsButler, ra, dec, nPixel=15, filter='HSC-R'):
     """
@@ -843,6 +880,7 @@ def getCoaddCutOut(fsButler, ra, dec, nPixel=15, filter='HSC-R'):
                 catSubImage.append(record)
 
     return subImage, origin, catSubImage
+
 
 def displayCutout(subImage, origin=None, catSubImage=None, frame=0):
     """
