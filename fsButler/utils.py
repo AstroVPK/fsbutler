@@ -12,6 +12,8 @@ import lsst.afw.display.ds9 as ds9
 
 from lsst.pex.exceptions import Exception as LsstCppException
 
+import makeMapperInfo
+
 """
 Utility functions to process data elements delivered by fsButler
 """
@@ -724,7 +726,7 @@ def genMagCountsPlot(catHst, catHsc, catHscNoMatch, nBins=50, fontSize=18):
 
 
 def buildCatFromIds(objIds, fsButler, dataType='deepCoadd'):
-    info = utils.makeMapperInfo(fsButler.butler)
+    info = makeMapperInfo.makeMapperInfo(fsButler.butler)
     cat = None
     for objId in objIds:
         if 'Coadd' in dataType or 'coadd' in dataType:
@@ -743,7 +745,7 @@ def buildCatFromIds(objIds, fsButler, dataType='deepCoadd'):
 
 
 def getRecord(objId, fsButler, dataType='deepCoadd'):
-    info = utils.makeMapperInfo(fsButler.butler)
+    info = makeMapperInfo.makeMapperInfo(fsButler.butler)
     if 'Coadd' in dataType or 'coadd' in dataType:
         dataId = info.splitCoaddId(objId)
     else:
@@ -756,7 +758,7 @@ def getRecord(objId, fsButler, dataType='deepCoadd'):
 
 def getParent(objId, fsButler, dataType='deepCoadd'):
     record = getRecord(objId, fsButler, dataType='deepCoadd')
-    info = utils.makeMapperInfo(fsButler.butler)
+    info = makeMapperInfo.makeMapperInfo(fsButler.butler)
     parentId = record.getParent()
     if parentId == 0:
         print("This object has no parent")
@@ -781,7 +783,7 @@ def getMultId(cat):
 
 def displayObject(objId, fsButler, dataType='deepCoadd', suffix='', nPixel=15, frame=None):
     # TODO: Enable single exposure objects
-    info = utils.makeMapperInfo(fsButler.butler)
+    info = makeMapperInfo.makeMapperInfo(fsButler.butler)
     if 'Coadd' in dataType or 'coadd' in dataType:
         dataId = info.splitCoaddId(objId)
     else:
@@ -805,7 +807,7 @@ def showCoaddInputs(objId, fsButler, coaddType="deepCoadd"):
     @param fsButler    Butler to provide inputs
     @param coaddType Type of coadd to examine
     """
-    info = utils.makeMapperInfo(fsButler.butler)
+    info = makeMapperInfo.makeMapperInfo(fsButler.butler)
     dataId = info.splitCoaddId(objId)
     dataId.pop('objId')
     src = fsButler.butler.get('deepCoadd_src', **dataId)
